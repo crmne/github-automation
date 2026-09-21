@@ -97,10 +97,14 @@ class ReviewMissingPRs
     pr = @api.get(path)
     return false unless pr['state'] == 'open' && !pr['draft']
     return false if Time.parse(pr.fetch('updated_at')) > @now - GRACE_PERIOD
+    head_sha = pr.dig('head', 'sha')
+    return false if head_sha.to_s.empty?
     return false if pr.fetch('requested_reviewers', []).any? { |user| copilot?(user) }
-    return false if @api.all("#{path}/reviews").any? { |review| copilot?(review['user']) }
+    return false if @api.all("#{path}/reviews").any? do |review|
+      copilot?(review['user']) && review['commit_id'] == head_sha
+    end
 
-    events = @api.all(path.sub('/pulls/', '/issues/') + '/timeline')
+    events = events_for_current_head(@api.all(path.sub('/pulls/', '/issues/') + '/timeline'), head_sha)
     requests = events.select { |event| event['event'] == 'review_requested' && copilot?(event['requested_reviewer']) }
     return false if requests.any? { |event| event.dig('actor', 'login') == @owner }
     return false if requests.any? { |event| Time.parse(event.fetch('created_at')) > @now - GRACE_PERIOD }
@@ -110,6 +114,15 @@ class ReviewMissingPRs
   end
 
   private
+
+  def events_for_current_head(events, head_sha)
+    boundary = events.rindex do |event|
+      (event['event'] == 'committed' && event['sha'] == head_sha) ||
+        (event['event'] == 'head_ref_force_pushed' &&
+          [event['after'], event.dig('after_commit', 'id')].include?(head_sha))
+    end
+    boundary ? events.drop(boundary + 1) : events
+  end
 
   def copilot?(user)
     LOGINS.include?(user&.fetch('login', '').to_s.downcase)

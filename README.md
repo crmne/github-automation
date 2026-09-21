@@ -8,11 +8,12 @@ GitHub's automatic PR reviews use the PR author's Copilot access and credits.
 This workflow checks every 15 minutes for open PRs that still lack a Copilot
 review, then requests at most one review as the repository owner.
 
-It waits until the PR has been quiet for 15 minutes, skips drafts, archived
-repositories, forks, completed reviews, and pending Copilot work. It never
-requests another review after the owner has already requested one. GitHub's
-review-request timeline provides that history, so no separate database is
-needed. New pushes do not trigger paid repeat reviews.
+It waits until the PR has been quiet for 15 minutes and skips drafts, archived
+repositories, forks, reviews of the current head commit, and pending Copilot
+work. A new head commit makes an older review stale and eligible for another
+review. It requests at most once per head when acting as the owner. GitHub's
+review commit and request timeline data provide that history, so no separate
+database is needed.
 
 It requests reviews only while more than 5% of the included quota remains and
 paid overages are disabled. Unknown quota data stops the fallback. This uses

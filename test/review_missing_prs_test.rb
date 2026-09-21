@@ -37,6 +37,9 @@ class ReviewMissingPRsTest < Minitest::Test
       @timeline => []
     })
     @now = Time.utc(2026, 9, 15, 10)
+    @head_sha = 'current-head'
+    @api.responses[@path]['head'] = { 'sha' => @head_sha }
+    @api.responses[@timeline] = [{ 'event' => 'committed', 'sha' => @head_sha }]
   end
 
   def run_fallback(dry_run: false)
@@ -95,7 +98,7 @@ class ReviewMissingPRsTest < Minitest::Test
 
   def test_existing_reviews_and_pending_requests_are_skipped
     ReviewMissingPRs::LOGINS.each do |login|
-      @api.responses["#{@path}/reviews"] = [{ 'user' => { 'login' => login } }]
+      @api.responses["#{@path}/reviews"] = [{ 'user' => { 'login' => login }, 'commit_id' => @head_sha }]
       run_fallback
       assert_empty @api.posts
       @api.responses["#{@path}/reviews"] = []
@@ -106,28 +109,53 @@ class ReviewMissingPRsTest < Minitest::Test
     end
   end
 
+  def test_requests_a_new_review_when_the_existing_review_is_for_an_older_head
+    @api.responses["#{@path}/reviews"] = [
+      { 'user' => { 'login' => ReviewMissingPRs::BOT }, 'commit_id' => 'older-head' }
+    ]
+
+    run_fallback
+
+    assert_equal 1, @api.posts.size
+  end
+
   def test_never_retries_an_owner_request_even_if_review_failed
-    @api.responses[@timeline] = [{ 'event' => 'review_requested', 'actor' => { 'login' => 'crmne' },
-                                  'requested_reviewer' => { 'login' => 'Copilot' }, 'created_at' => '2026-09-15T08:00:00Z' }]
+    @api.responses[@timeline] << { 'event' => 'review_requested', 'actor' => { 'login' => 'crmne' },
+                                   'requested_reviewer' => { 'login' => 'Copilot' },
+                                   'created_at' => '2026-09-15T08:00:00Z' }
     run_fallback
     assert_empty @api.posts
   end
 
+  def test_retries_after_a_new_head_when_the_owner_requested_the_old_review
+    @api.responses[@timeline] = [
+      { 'event' => 'committed', 'sha' => 'older-head' },
+      { 'event' => 'review_requested', 'actor' => { 'login' => 'crmne' },
+        'requested_reviewer' => { 'login' => 'Copilot' }, 'created_at' => '2026-09-15T08:00:00Z' },
+      { 'event' => 'committed', 'sha' => @head_sha }
+    ]
+
+    run_fallback
+
+    assert_equal 1, @api.posts.size
+  end
+
   def test_gives_native_review_requests_time_to_start
-    @api.responses[@timeline] = [{ 'event' => 'review_requested', 'actor' => { 'login' => 'contributor' },
-                                  'requested_reviewer' => { 'login' => 'Copilot' }, 'created_at' => '2026-09-15T09:59:00Z' }]
+    @api.responses[@timeline] << { 'event' => 'review_requested', 'actor' => { 'login' => 'contributor' },
+                                   'requested_reviewer' => { 'login' => 'Copilot' },
+                                   'created_at' => '2026-09-15T09:59:00Z' }
     run_fallback
     assert_empty @api.posts
   end
 
   def test_waits_for_running_copilot_work
-    @api.responses[@timeline] = [{ 'event' => 'copilot_work_started' }]
+    @api.responses[@timeline] << { 'event' => 'copilot_work_started' }
     run_fallback
     assert_empty @api.posts
   end
 
   def test_can_fall_back_after_native_work_finished_without_a_review
-    @api.responses[@timeline] = [{ 'event' => 'copilot_work_started' }, { 'event' => 'copilot_work_finished' }]
+    @api.responses[@timeline] += [{ 'event' => 'copilot_work_started' }, { 'event' => 'copilot_work_finished' }]
     run_fallback
     assert_equal 1, @api.posts.size
   end
@@ -138,7 +166,9 @@ class ReviewMissingPRsTest < Minitest::Test
     original_get = api.method(:get)
     api.define_singleton_method(:get) do |path|
       quota_reads += 1 if path == 'copilot_internal/user'
-      responses['repos/crmne/example/pulls/1/reviews'] = [{ 'user' => { 'login' => 'Copilot' } }] if quota_reads == 2
+      responses['repos/crmne/example/pulls/1/reviews'] = [
+        { 'user' => { 'login' => 'Copilot' }, 'commit_id' => 'current-head' }
+      ] if quota_reads == 2
       original_get.call(path)
     end
     run_fallback
