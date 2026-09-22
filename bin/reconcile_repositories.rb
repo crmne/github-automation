@@ -1,4 +1,3 @@
-require 'base64'
 require_relative 'review_missing_prs'
 
 class ReconcileRepositories
@@ -109,15 +108,19 @@ class ReconcileRepositories
     return 0 unless existing.empty?
 
     sha = @api.get("repos/#{name}/git/ref/heads/#{default_branch}").dig('object', 'sha')
-    @api.post("repos/#{name}/git/refs", { ref: "refs/heads/#{branch}", sha: sha })
-    missing.each do |path, template|
-      body = Base64.strict_encode64(File.read(File.join(@templates, template)))
-      @api.put("repos/#{name}/contents/#{path}", { message: "Add account repository policy", content: body, branch: branch })
+    base_tree = @api.get("repos/#{name}/git/commits/#{sha}").dig('tree', 'sha')
+    entries = missing.map do |path, template|
+      blob = @api.post("repos/#{name}/git/blobs", {
+        content: File.read(File.join(@templates, template)), encoding: 'utf-8'
+      })
+      { path: path, mode: '100644', type: 'blob', sha: blob.fetch('sha') }
     end
-    if dependabot
-      @api.delete("repos/#{name}/contents/.github/dependabot.yml",
-                  { message: 'Disable Dependabot pull requests', sha: dependabot.fetch('sha'), branch: branch })
-    end
+    entries << { path: '.github/dependabot.yml', mode: '100644', type: 'blob', sha: nil } if dependabot
+    tree = @api.post("repos/#{name}/git/trees", { base_tree: base_tree, tree: entries })
+    commit = @api.post("repos/#{name}/git/commits", {
+      message: 'Apply account repository policy', tree: tree.fetch('sha'), parents: [sha]
+    })
+    @api.post("repos/#{name}/git/refs", { ref: "refs/heads/#{branch}", sha: commit.fetch('sha') })
     @api.post("repos/#{name}/pulls", {
       title: 'Apply account repository policy',
       head: branch,

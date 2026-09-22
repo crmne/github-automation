@@ -6,6 +6,15 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_equal true, ReconcileRepositories::REPOSITORY_SETTINGS.fetch(:has_pull_requests)
   end
 
+  def test_policy_branch_uses_git_objects_instead_of_one_commit_per_file
+    source = File.read(File.expand_path('../bin/reconcile_repositories.rb', __dir__))
+
+    assert_includes source, 'git/blobs'
+    assert_includes source, 'git/trees'
+    assert_includes source, 'git/commits'
+    refute_includes source, '@api.put("repos/#{name}/contents/'
+  end
+
   class ScopeAPI
     def get(path)
       return { 'login' => 'crmne' } if path == 'user'

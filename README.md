@@ -76,7 +76,8 @@ commit. It:
 The baseline agent policy uses trunk-based maintainer development and requires
 visual evidence for user-interface changes. Existing policy files are never
 overwritten because project-specific instructions, such as Spotifast's, are
-more useful than a generic replacement.
+more useful than a generic replacement. All files for a repository are added in
+one commit so the policy proposal triggers only one CI run per workflow.
 
 Set the `REPOSITORY_POLICY_TOKEN` Actions secret to a fine-grained owner token
 with Administration, Contents, Pull requests, and Metadata access for every
