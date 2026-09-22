@@ -40,7 +40,8 @@ or quota problems cause a quiet skip instead of repeated failure emails.
 Set the `COPILOT_REVIEWS_ENABLED` Actions variable to `true` after the token's
 review permissions have been verified to enable scheduled requests.
 
-Run the offline checks with `ruby test/review_missing_prs_test.rb`.
+Run the offline checks with
+`ruby -Itest -e 'Dir["test/**/*_test.rb"].sort.each { |file| require_relative file }'`.
 
 The schedule is a request to GitHub, not a guaranteed 15-minute timer. GitHub
 may delay scheduled workflows by hours. To catch up after a delay, each run
@@ -54,7 +55,10 @@ and [requesting reviews through the API](https://docs.github.com/en/copilot/how-
 ## Repository policy
 
 The daily repository-policy workflow reconciles every active repository owned
-by the account. It:
+by the account, including private repositories and forks. It excludes only
+archived repositories. Empty repositories receive applicable settings but no
+policy-file pull request or default-branch ruleset until they have an initial
+commit. It:
 
 - watches all repository activity for the owner;
 - enables issues and discussions, and disables wikis and projects;

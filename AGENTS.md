@@ -8,7 +8,10 @@ maintainer explicitly requests one.
 Create releases only from tags whose commits are reachable from the default
 branch. Never publish a release from an unmerged branch.
 
-This repository changes policy across every active, owned, non-fork repository.
+This repository changes policy across every active owned repository, including
+private repositories and forks. Archived repositories are the only blanket
+exclusion. Empty repositories receive settings but cannot receive files or a
+default-branch ruleset until they have an initial commit.
 All reconciliation must be idempotent, bounded, safe on partial failure, and
 dry-runnable. Never log repository contents, credentials, tokens, private names,
 or API responses containing account data. A missing or ambiguous permission

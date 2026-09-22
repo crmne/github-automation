@@ -17,4 +17,4 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
-      - run: ruby test/review_missing_prs_test.rb
+      - run: ruby -Itest -e 'Dir["test/**/*_test.rb"].sort.each { |file| require_relative file }'

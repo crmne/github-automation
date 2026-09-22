@@ -33,7 +33,7 @@ class ReconcileRepositories
   def run
     raise GitHub::Error, 'Token must belong to the repository owner' unless @api.get('user')['login'] == @owner
 
-    repositories = @api.all('user/repos?affiliation=owner').select { |repo| !repo['archived'] && !repo['fork'] }
+    repositories = @api.all('user/repos?affiliation=owner').reject { |repo| repo['archived'] }
     changes = repositories.sum { |repo| reconcile(@api.get("repos/#{repo.fetch('full_name')}")) }
     puts "#{@dry_run ? 'Would apply' : 'Applied'} #{changes} policy change#{'s' unless changes == 1} across #{repositories.size} repositories."
   end
@@ -61,8 +61,8 @@ class ReconcileRepositories
       end
     end
 
-    changes += reconcile_ruleset(name, label)
-    changes += reconcile_files(repo) if @manage_files
+    changes += reconcile_ruleset(name, label) unless repo['size'].to_i.zero?
+    changes += reconcile_files(repo) if @manage_files && !repo['size'].to_i.zero?
     changes
   rescue GitHub::Error => error
     warn "Skipped #{label}: #{error.message}"
@@ -88,6 +88,9 @@ class ReconcileRepositories
     change("#{label}: linear default-branch history") do
       current ? @api.put("repos/#{name}/rulesets/#{current.fetch('id')}", payload) : @api.post("repos/#{name}/rulesets", payload)
     end
+  rescue GitHub::Error => error
+    warn "Skipped #{label} linear-history ruleset: #{error.message}"
+    0
   end
 
   def reconcile_files(repo)
