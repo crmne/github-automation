@@ -7,8 +7,7 @@ class ReconcileRepositories
     'AGENTS.md' => 'AGENTS.md',
     '.github/copilot-instructions.md' => 'copilot-instructions.md',
     '.github/triage.yml' => 'triage.yml',
-    '.github/FUNDING.yml' => 'FUNDING.yml',
-    '.github/workflows/release-source.yml' => 'release-source.yml'
+    '.github/FUNDING.yml' => 'FUNDING.yml'
   }.freeze
 
   REPOSITORY_SETTINGS = {

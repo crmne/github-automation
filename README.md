@@ -87,6 +87,7 @@ API. Public repositories participate in the GitHub Archive Program by default,
 but the “Preserve this repository” opt-out checkbox has no documented API.
 Likewise, releases point to tags rather than branches, so GitHub has no native
 “release only from the default branch” repository switch. Release workflows
-should verify that their tag commit is reachable from the repository's default
-branch before publishing. Social previews require an intentional image asset;
-they should be audited separately rather than filled with a generic image.
+must be adapted individually to verify that their tag commit is reachable from
+the repository's default branch before publishing; a separate generic check
+cannot gate an existing publisher. Social previews require an intentional image
+asset; they should be audited separately rather than filled with a generic image.
