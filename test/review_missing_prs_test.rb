@@ -56,10 +56,17 @@ class ReviewMissingPRsTest < Minitest::Test
     assert_empty @api.posts
   end
 
-  def test_stops_at_one_review_even_with_more_candidates
-    @api.responses['search'] << { 'repository_url' => 'https://api.github.com/repos/crmne/example', 'number' => 2 }
+  def test_requests_a_bounded_batch
+    (2..12).each do |number|
+      path = "repos/crmne/example/pulls/#{number}"
+      timeline = "repos/crmne/example/issues/#{number}/timeline"
+      @api.responses['search'] << { 'repository_url' => 'https://api.github.com/repos/crmne/example', 'number' => number }
+      @api.responses[path] = @api.responses[@path].dup
+      @api.responses["#{path}/reviews"] = []
+      @api.responses[timeline] = [{ 'event' => 'committed', 'sha' => @head_sha }]
+    end
     run_fallback
-    assert_equal 1, @api.posts.size
+    assert_equal ReviewMissingPRs::MAX_REQUESTS_PER_RUN, @api.posts.size
   end
 
   def test_unknown_quota_exhausted_credits_reserve_and_overages_stop_requests
@@ -119,10 +126,28 @@ class ReviewMissingPRsTest < Minitest::Test
     assert_equal 1, @api.posts.size
   end
 
-  def test_never_retries_an_owner_request_even_if_review_failed
+  def test_waits_before_retrying_an_owner_request
     @api.responses[@timeline] << { 'event' => 'review_requested', 'actor' => { 'login' => 'crmne' },
                                    'requested_reviewer' => { 'login' => 'Copilot' },
-                                   'created_at' => '2026-09-15T08:00:00Z' }
+                                   'created_at' => '2026-09-15T09:00:00Z' }
+    run_fallback
+    assert_empty @api.posts
+  end
+
+  def test_retries_stalled_owner_requests_and_stops_after_three_attempts
+    2.times do |attempt|
+      @api.responses[@timeline] << { 'event' => 'review_requested', 'actor' => { 'login' => 'crmne' },
+                                     'requested_reviewer' => { 'login' => 'Copilot' },
+                                     'created_at' => "2026-09-15T0#{attempt + 6}:00:00Z" }
+    end
+    @api.responses[@timeline] << { 'event' => 'copilot_work_started', 'created_at' => '2026-09-15T07:01:00Z' }
+    run_fallback
+    assert_equal 1, @api.posts.size
+
+    @api.posts.clear
+    @api.responses[@timeline] << { 'event' => 'review_requested', 'actor' => { 'login' => 'crmne' },
+                                   'requested_reviewer' => { 'login' => 'Copilot' },
+                                   'created_at' => '2026-09-15T07:30:00Z' }
     run_fallback
     assert_empty @api.posts
   end
@@ -149,7 +174,7 @@ class ReviewMissingPRsTest < Minitest::Test
   end
 
   def test_waits_for_running_copilot_work
-    @api.responses[@timeline] << { 'event' => 'copilot_work_started' }
+    @api.responses[@timeline] << { 'event' => 'copilot_work_started', 'created_at' => '2026-09-15T09:59:00Z' }
     run_fallback
     assert_empty @api.posts
   end

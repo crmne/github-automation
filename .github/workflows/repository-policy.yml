@@ -1,0 +1,41 @@
+name: Repository policy
+
+on:
+  schedule:
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Audit without changing repositories
+        type: boolean
+        default: true
+      manage_files:
+        description: Open pull requests for missing policy files
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-policy
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: vars.REPOSITORY_POLICY_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - run: ruby bin/reconcile_repositories.rb
+        env:
+          GITHUB_POLICY_TOKEN: ${{ secrets.GITHUB_POLICY_TOKEN }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          MANAGE_FILES: ${{ github.event_name != 'workflow_dispatch' || inputs.manage_files }}

@@ -18,6 +18,18 @@ class GitHub
     request(Net::HTTP::Post, path, body)
   end
 
+  def patch(path, body)
+    request(Net::HTTP::Patch, path, body)
+  end
+
+  def put(path, body = nil)
+    request(Net::HTTP::Put, path, body)
+  end
+
+  def delete(path, body = nil)
+    request(Net::HTTP::Delete, path, body)
+  end
+
   def all(path)
     rows = []
     page = 1
@@ -54,6 +66,9 @@ class ReviewMissingPRs
   BOT = 'copilot-pull-request-reviewer[bot]'
   LOGINS = ['copilot', BOT, 'copilot[bot]'].freeze
   GRACE_PERIOD = 15 * 60
+  RETRY_PERIOD = 2 * 60 * 60
+  MAX_ATTEMPTS_PER_HEAD = 3
+  MAX_REQUESTS_PER_RUN = 10
 
   def initialize(api, owner:, dry_run: true, now: Time.now)
     @api, @owner, @dry_run, @now = api, owner, dry_run, now
@@ -63,8 +78,9 @@ class ReviewMissingPRs
     raise GitHub::Error, 'Token must belong to the repository owner' unless @api.get('user')['login'] == @owner
     return puts('Skipped: included credits unavailable, quota unknown, or paid overages enabled.') unless credits_available?
 
-    query = URI.encode_www_form(q: "user:#{@owner} is:pr is:open draft:false", sort: 'created', order: 'desc')
+    query = URI.encode_www_form(q: "user:#{@owner} is:pr is:open draft:false", sort: 'created', order: 'asc')
     repositories = {}
+    requested = 0
     @api.all("search/issues?#{query}").each do |issue|
       name = issue.fetch('repository_url').delete_prefix('https://api.github.com/repos/')
       next unless name.start_with?("#{@owner}/")
@@ -74,14 +90,25 @@ class ReviewMissingPRs
 
       path = "repos/#{name}/pulls/#{Integer(issue.fetch('number'))}"
       next unless eligible?(path)
-      return puts('Dry run: one missing review is eligible for the next fallback.') if @dry_run
-      return puts('Skipped: included credits no longer available.') unless credits_available?
+      if @dry_run
+        requested += 1
+        break if requested == MAX_REQUESTS_PER_RUN
+        next
+      end
+      break unless credits_available?
       next unless eligible?(path)
 
       @api.post("#{path}/requested_reviewers", { reviewers: [BOT] })
-      return puts('Requested one missing Copilot review using the owner account.')
+      requested += 1
+      break if requested == MAX_REQUESTS_PER_RUN
     end
-    puts('No missing Copilot reviews need a fallback.')
+    if @dry_run && requested.positive?
+      puts("Dry run: #{requested} missing Copilot review#{'s' unless requested == 1} eligible for the next fallback.")
+    elsif requested.positive?
+      puts("Requested #{requested} missing Copilot review#{'s' unless requested == 1} using the owner account.")
+    else
+      puts('No missing Copilot reviews need a fallback.')
+    end
   end
 
   def credits_available?
@@ -106,11 +133,15 @@ class ReviewMissingPRs
 
     events = events_for_current_head(@api.all(path.sub('/pulls/', '/issues/') + '/timeline'), head_sha)
     requests = events.select { |event| event['event'] == 'review_requested' && copilot?(event['requested_reviewer']) }
-    return false if requests.any? { |event| event.dig('actor', 'login') == @owner }
-    return false if requests.any? { |event| Time.parse(event.fetch('created_at')) > @now - GRACE_PERIOD }
+    owner_requests = requests.select { |event| event.dig('actor', 'login') == @owner }
+    return false if owner_requests.size >= MAX_ATTEMPTS_PER_HEAD
+    return false if requests.any? { |event| Time.parse(event.fetch('created_at')) > @now - RETRY_PERIOD }
 
     work = events.select { |event| %w[copilot_work_started copilot_work_finished].include?(event['event']) }
-    work.last&.fetch('event') != 'copilot_work_started'
+    return true unless work.last&.fetch('event') == 'copilot_work_started'
+
+    started_at = work.last['created_at']
+    started_at && Time.parse(started_at) <= @now - RETRY_PERIOD
   end
 
   private

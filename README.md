@@ -42,5 +42,46 @@ review permissions have been verified to enable scheduled requests.
 
 Run the offline checks with `ruby test/review_missing_prs_test.rb`.
 
+The schedule is a request to GitHub, not a guaranteed 15-minute timer. GitHub
+may delay scheduled workflows by hours. To catch up after a delay, each run
+handles the ten oldest eligible pull requests. A Copilot request that remains
+stalled for two hours may be retried, up to three attempts for one head commit.
+
 References: [GitHub's review billing rules](https://docs.github.com/en/copilot/concepts/agents/code-review)
 and [requesting reviews through the API](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review).
+
+## Repository policy
+
+The daily repository-policy workflow reconciles every active repository owned
+by the account. It:
+
+- watches all repository activity for the owner;
+- enables issues and discussions, and disables wikis and projects;
+- allows squash merges only and deletes merged branches;
+- adds a ruleset requiring linear history on the default branch while still
+  allowing direct maintainer commits;
+- enables vulnerability alerts but disables Dependabot security-update pull
+  requests;
+- opens one pull request when `AGENTS.md`, Copilot instructions, triage policy,
+  or GitHub Sponsors funding configuration is missing; and
+- removes `.github/dependabot.yml` in that same pull request so version-update
+  pull requests stay disabled.
+
+The baseline agent policy uses trunk-based maintainer development and requires
+visual evidence for user-interface changes. Existing policy files are never
+overwritten because project-specific instructions, such as Spotifast's, are
+more useful than a generic replacement.
+
+Set `GITHUB_POLICY_TOKEN` to a fine-grained owner token with Administration,
+Contents, Pull requests, and Metadata access for every managed repository. Run
+the workflow manually in dry-run mode first, then set the
+`REPOSITORY_POLICY_ENABLED` variable to `true`.
+
+Two settings cannot currently be fully enforced through the documented REST
+API. Public repositories participate in the GitHub Archive Program by default,
+but the “Preserve this repository” opt-out checkbox has no documented API.
+Likewise, releases point to tags rather than branches, so GitHub has no native
+“release only from the default branch” repository switch. Release workflows
+should verify that their tag commit is reachable from the repository's default
+branch before publishing. Social previews require an intentional image asset;
+they should be audited separately rather than filled with a generic image.
