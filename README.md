@@ -61,7 +61,8 @@ policy-file pull request or default-branch ruleset until they have an initial
 commit. It:
 
 - watches all repository activity for the owner;
-- enables issues and discussions, and disables wikis and projects;
+- enables issues, discussions, and pull requests, and disables wikis and
+  projects;
 - allows squash merges only and deletes merged branches;
 - adds a ruleset requiring linear history on the default branch while still
   allowing direct maintainer commits;

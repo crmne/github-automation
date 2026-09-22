@@ -2,6 +2,10 @@ require 'minitest/autorun'
 require_relative '../bin/reconcile_repositories'
 
 class ReconcileRepositoriesTest < Minitest::Test
+  def test_repository_settings_enable_pull_requests
+    assert_equal true, ReconcileRepositories::REPOSITORY_SETTINGS.fetch(:has_pull_requests)
+  end
+
   class ScopeAPI
     def get(path)
       return { 'login' => 'crmne' } if path == 'user'

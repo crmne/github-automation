@@ -15,6 +15,7 @@ class ReconcileRepositories
     has_projects: false,
     has_wiki: false,
     has_discussions: true,
+    has_pull_requests: true,
     allow_merge_commit: false,
     allow_squash_merge: true,
     allow_rebase_merge: false,
