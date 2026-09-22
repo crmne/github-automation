@@ -44,8 +44,9 @@ Run the offline checks with `ruby test/review_missing_prs_test.rb`.
 
 The schedule is a request to GitHub, not a guaranteed 15-minute timer. GitHub
 may delay scheduled workflows by hours. To catch up after a delay, each run
-handles the ten oldest eligible pull requests. A Copilot request that remains
-stalled for two hours may be retried, up to three attempts for one head commit.
+handles every eligible pull request, oldest first, until the included-credit
+reserve is reached. A Copilot request that remains stalled for two hours may be
+retried, up to three attempts for one head commit.
 
 References: [GitHub's review billing rules](https://docs.github.com/en/copilot/concepts/agents/code-review)
 and [requesting reviews through the API](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review).

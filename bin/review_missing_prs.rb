@@ -68,7 +68,6 @@ class ReviewMissingPRs
   GRACE_PERIOD = 15 * 60
   RETRY_PERIOD = 2 * 60 * 60
   MAX_ATTEMPTS_PER_HEAD = 3
-  MAX_REQUESTS_PER_RUN = 10
 
   def initialize(api, owner:, dry_run: true, now: Time.now)
     @api, @owner, @dry_run, @now = api, owner, dry_run, now
@@ -92,7 +91,6 @@ class ReviewMissingPRs
       next unless eligible?(path)
       if @dry_run
         requested += 1
-        break if requested == MAX_REQUESTS_PER_RUN
         next
       end
       break unless credits_available?
@@ -100,7 +98,6 @@ class ReviewMissingPRs
 
       @api.post("#{path}/requested_reviewers", { reviewers: [BOT] })
       requested += 1
-      break if requested == MAX_REQUESTS_PER_RUN
     end
     if @dry_run && requested.positive?
       puts("Dry run: #{requested} missing Copilot review#{'s' unless requested == 1} eligible for the next fallback.")

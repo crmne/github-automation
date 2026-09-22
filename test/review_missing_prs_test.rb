@@ -56,7 +56,7 @@ class ReviewMissingPRsTest < Minitest::Test
     assert_empty @api.posts
   end
 
-  def test_requests_a_bounded_batch
+  def test_requests_every_eligible_pull_request
     (2..12).each do |number|
       path = "repos/crmne/example/pulls/#{number}"
       timeline = "repos/crmne/example/issues/#{number}/timeline"
@@ -66,7 +66,7 @@ class ReviewMissingPRsTest < Minitest::Test
       @api.responses[timeline] = [{ 'event' => 'committed', 'sha' => @head_sha }]
     end
     run_fallback
-    assert_equal ReviewMissingPRs::MAX_REQUESTS_PER_RUN, @api.posts.size
+    assert_equal 12, @api.posts.size
   end
 
   def test_unknown_quota_exhausted_credits_reserve_and_overages_stop_requests
