@@ -35,7 +35,7 @@ jobs:
           ruby-version: '3.3'
       - run: ruby bin/reconcile_repositories.rb
         env:
-          GITHUB_POLICY_TOKEN: ${{ secrets.GITHUB_POLICY_TOKEN }}
+          GITHUB_POLICY_TOKEN: ${{ secrets.REPOSITORY_POLICY_TOKEN }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
           MANAGE_FILES: ${{ github.event_name != 'workflow_dispatch' || inputs.manage_files }}

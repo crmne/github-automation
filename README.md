@@ -73,9 +73,9 @@ visual evidence for user-interface changes. Existing policy files are never
 overwritten because project-specific instructions, such as Spotifast's, are
 more useful than a generic replacement.
 
-Set `GITHUB_POLICY_TOKEN` to a fine-grained owner token with Administration,
-Contents, Pull requests, and Metadata access for every managed repository. Run
-the workflow manually in dry-run mode first, then set the
+Set the `REPOSITORY_POLICY_TOKEN` Actions secret to a fine-grained owner token
+with Administration, Contents, Pull requests, and Metadata access for every
+managed repository. Run the workflow manually in dry-run mode first, then set the
 `REPOSITORY_POLICY_ENABLED` variable to `true`.
 
 Two settings cannot currently be fully enforced through the documented REST
