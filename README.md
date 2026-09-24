@@ -69,7 +69,9 @@ commit. It:
 - enables vulnerability alerts but disables Dependabot security-update pull
   requests;
 - opens one pull request when `AGENTS.md`, Copilot instructions, triage policy,
-  or GitHub Sponsors funding configuration is missing; and
+  or GitHub Sponsors funding configuration is missing;
+- appends release-notes guidance to an existing `AGENTS.md` that has none, in
+  that same pull request; and
 - removes `.github/dependabot.yml` in that same pull request so version-update
   pull requests stay disabled.
 
@@ -78,6 +80,22 @@ visual evidence for user-interface changes. Existing policy files are never
 overwritten because project-specific instructions, such as Spotifast's, are
 more useful than a generic replacement. All files for a repository are added in
 one commit so the policy proposal triggers only one CI run per workflow.
+
+The release-notes guidance (`templates/release-notes-guidance.md`) follows
+Spotifast's style: read the previous two stable releases, a short summary,
+media, `New` and `Fixed` items that credit implementers and reporters, a
+`Thanks` section, a full-changelog link, notes committed before tagging and
+published instead of GitHub's generated notes, and no release for every fix.
+New `AGENTS.md` files carry it as a `## Releases` section. An existing
+`AGENTS.md` gets it appended after a `<!-- github-automation: release-notes -->`
+marker only when the file has no heading starting with `Releas` (such as
+`## Releases` or `## Releasing`), never mentions release notes, and does not
+already carry the marker; nothing else in the file changes. Symlinked or
+unreadable files are left alone. Every repository is eligible, even one that
+has not published a release yet: the guidance only applies when a release is
+made, and checking release history would add API calls without changing the
+advice. Files are read at the default-branch commit the proposal builds on, so
+the append cannot revert a concurrent change.
 
 Set the `REPOSITORY_POLICY_TOKEN` Actions secret to a fine-grained owner token
 with Administration, Contents, Pull requests, and Metadata access for every

@@ -68,4 +68,150 @@ class ReconcileRepositoriesTest < Minitest::Test
 
     assert_includes error, 'Skipped [private repository] linear-history ruleset'
   end
+
+  TEMPLATES = File.expand_path('../templates', __dir__)
+
+  class FilesAPI
+    attr_reader :writes, :blobs, :trees, :reads
+
+    def initialize(files)
+      @files = files
+      @writes = []
+      @blobs = []
+      @trees = []
+      @reads = []
+    end
+
+    def get(path)
+      @reads << path
+      case path
+      when %r{/git/ref/heads/main\z} then { 'object' => { 'sha' => 'head' } }
+      when %r{/git/commits/head\z} then { 'tree' => { 'sha' => 'base' } }
+      when %r{/contents/(.+)\?ref=head\z}
+        text = @files[Regexp.last_match(1)]
+        raise GitHub::Error, 'GitHub returned HTTP 404' if text.nil?
+
+        { 'type' => 'file', 'encoding' => 'base64', 'content' => [text].pack('m') }
+      else raise "unexpected GET #{path}"
+      end
+    end
+
+    def all(_path)
+      []
+    end
+
+    def post(path, body)
+      @writes << path
+      case path
+      when %r{/git/blobs\z}
+        @blobs << body.fetch(:content)
+        { 'sha' => "blob#{@blobs.size}" }
+      when %r{/git/trees\z}
+        @trees << body
+        { 'sha' => 'tree' }
+      when %r{/git/commits\z} then { 'sha' => 'commit' }
+      else {}
+      end
+    end
+
+    %i[put patch delete].each do |verb|
+      define_method(verb) { |path, *_| @writes << "#{verb} #{path}" }
+    end
+  end
+
+  COMPLETE = {
+    '.github/copilot-instructions.md' => "copilot\n",
+    '.github/triage.yml' => "triage\n",
+    '.github/FUNDING.yml' => "github: crmne\n"
+  }.freeze
+  REPO = { 'full_name' => 'crmne/project', 'default_branch' => 'main' }.freeze
+
+  def reconcile_files(files, dry_run: false)
+    api = FilesAPI.new(COMPLETE.merge(files))
+    reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: dry_run)
+    output, = capture_io { @changes = reconciler.send(:reconcile_files, REPO) }
+    [api, output]
+  end
+
+  def guidance
+    File.read(File.join(TEMPLATES, ReconcileRepositories::RELEASE_NOTES_TEMPLATE)).strip
+  end
+
+  def test_agents_template_contains_release_notes_guidance
+    template = File.read(File.join(TEMPLATES, 'AGENTS.md'))
+
+    assert_includes template, guidance
+    assert_includes guidance, '## Releases'
+    assert_includes guidance, 'previous two stable'
+    assert_includes guidance, '**Full changelog**:'
+    refute_includes guidance, "\u2014"
+  end
+
+  def test_appends_release_notes_guidance_to_existing_agents_file
+    api, = reconcile_files({ 'AGENTS.md' => "# Project\n\nKeep it small.\n\n" })
+
+    assert_equal 1, @changes
+    assert_equal 1, api.blobs.size
+    appended = api.blobs.first
+    assert appended.start_with?("# Project\n\nKeep it small.\n\n#{ReconcileRepositories::RELEASE_NOTES_MARKER}\n")
+    assert appended.end_with?("#{guidance}\n")
+    assert_equal [{ path: 'AGENTS.md', mode: '100644', type: 'blob', sha: 'blob1' }], api.trees.first.fetch(:tree)
+  end
+
+  def test_keeps_windows_line_endings_when_appending
+    api, = reconcile_files({ 'AGENTS.md' => "# Project\r\n" })
+
+    refute_match(/[^\r]\n/, api.blobs.first)
+  end
+
+  def test_skips_agents_files_that_already_have_release_guidance
+    [
+      "# Guide\n\n## Releases\n\nA release is not the tag alone.\n",
+      "# Guide\n\n## Releasing\n\nTag from main.\n",
+      "# Guide\n\nRead the previous releases before writing release notes.\n",
+      "# Guide\n\n#{ReconcileRepositories::RELEASE_NOTES_MARKER}\nEdited by hand.\n"
+    ].each do |agents|
+      api, output = reconcile_files({ 'AGENTS.md' => agents })
+
+      assert_equal 0, @changes, agents
+      assert_empty api.writes, agents
+      assert_empty output, agents
+    end
+  end
+
+  def test_missing_files_and_release_notes_share_one_commit
+    api, = reconcile_files({
+      'AGENTS.md' => "# Project\n",
+      '.github/triage.yml' => nil,
+      '.github/dependabot.yml' => "version: 2\n"
+    })
+
+    assert_equal 1, @changes
+    assert_equal 1, api.writes.count { |path| path.end_with?('/git/commits') }
+    assert_equal 1, api.writes.count { |path| path.end_with?('/pulls') }
+    paths = api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
+    assert_equal ['.github/triage.yml', 'AGENTS.md', '.github/dependabot.yml'], paths
+  end
+
+  def test_new_agents_file_uses_the_template_without_appending_twice
+    api, = reconcile_files({ 'AGENTS.md' => nil })
+
+    assert_equal [File.read(File.join(TEMPLATES, 'AGENTS.md'))], api.blobs
+  end
+
+  def test_reads_every_file_at_the_commit_the_proposal_builds_on
+    api, = reconcile_files({ 'AGENTS.md' => "# Project\n" })
+
+    contents = api.reads.grep(%r{/contents/})
+    refute_empty contents
+    assert(contents.all? { |path| path.end_with?('?ref=head') })
+  end
+
+  def test_dry_run_reports_release_notes_without_writing
+    api, output = reconcile_files({ 'AGENTS.md' => "# Project\n", '.github/triage.yml' => nil }, dry_run: true)
+
+    assert_equal 1, @changes
+    assert_empty api.writes
+    assert_includes output, 'policy pull request (.github/triage.yml, AGENTS.md release notes)'
+  end
 end

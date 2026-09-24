@@ -8,6 +8,8 @@ class ReconcileRepositories
     '.github/triage.yml' => 'triage.yml',
     '.github/FUNDING.yml' => 'FUNDING.yml'
   }.freeze
+  RELEASE_NOTES_TEMPLATE = 'release-notes-guidance.md'
+  RELEASE_NOTES_MARKER = '<!-- github-automation: release-notes -->'
 
   REPOSITORY_SETTINGS = {
     has_issues: true,
@@ -96,25 +98,24 @@ class ReconcileRepositories
     name = repo.fetch('full_name')
     label = repo['private'] ? '[private repository]' : name
     default_branch = repo.fetch('default_branch')
-    missing = MANAGED_FILES.reject { |path, _| exists?(name, path) }
-    dependabot = content(name, '.github/dependabot.yml')
-    return 0 if missing.empty? && !dependabot
+    sha = @api.get("repos/#{name}/git/ref/heads/#{default_branch}").dig('object', 'sha')
+    files = MANAGED_FILES.keys.to_h { |path| [path, content(name, path, sha)] }
+    missing = MANAGED_FILES.select { |path, _| files[path].nil? }
+    agents = files['AGENTS.md'] && agents_with_release_notes(files['AGENTS.md'])
+    dependabot = content(name, '.github/dependabot.yml', sha)
+    return 0 if missing.empty? && !agents && !dependabot
 
-    description = (missing.keys + (dependabot ? ['remove .github/dependabot.yml'] : [])).join(', ')
+    description = (missing.keys + (agents ? ['AGENTS.md release notes'] : []) +
+      (dependabot ? ['remove .github/dependabot.yml'] : [])).join(', ')
     return change("#{label}: policy pull request (#{description})") {} if @dry_run
 
     branch = 'github-automation/account-policy'
     existing = @api.all("repos/#{name}/pulls?state=open&head=#{@owner}:#{branch}")
     return 0 unless existing.empty?
 
-    sha = @api.get("repos/#{name}/git/ref/heads/#{default_branch}").dig('object', 'sha')
     base_tree = @api.get("repos/#{name}/git/commits/#{sha}").dig('tree', 'sha')
-    entries = missing.map do |path, template|
-      blob = @api.post("repos/#{name}/git/blobs", {
-        content: File.read(File.join(@templates, template)), encoding: 'utf-8'
-      })
-      { path: path, mode: '100644', type: 'blob', sha: blob.fetch('sha') }
-    end
+    entries = missing.map { |path, template| blob_entry(name, path, File.read(File.join(@templates, template))) }
+    entries << blob_entry(name, 'AGENTS.md', agents) if agents
     entries << { path: '.github/dependabot.yml', mode: '100644', type: 'blob', sha: nil } if dependabot
     tree = @api.post("repos/#{name}/git/trees", { base_tree: base_tree, tree: entries })
     commit = @api.post("repos/#{name}/git/commits", {
@@ -125,13 +126,39 @@ class ReconcileRepositories
       title: 'Apply account repository policy',
       head: branch,
       base: default_branch,
-      body: "Align this repository with the account-wide maintainer, review, triage, sponsorship, and dependency policy."
+      body: "Align this repository with the account-wide maintainer, review, release-notes, triage, sponsorship, and dependency policy."
     })
     1
   end
 
-  def exists?(name, path)
-    !content(name, path).nil?
+  def blob_entry(name, path, text)
+    blob = @api.post("repos/#{name}/git/blobs", { content: text, encoding: 'utf-8' })
+    { path: path, mode: '100644', type: 'blob', sha: blob.fetch('sha') }
+  end
+
+  # Returns AGENTS.md with the release-notes guidance appended, or nil when the
+  # file already has release guidance, carries the marker, or cannot be read as
+  # UTF-8 text (symlinks, large files), so existing content is never replaced.
+  def agents_with_release_notes(file)
+    text = file_text(file)
+    return nil if text.nil? || release_guidance?(text)
+
+    newline = text.include?("\r\n") ? "\r\n" : "\n"
+    block = "#{RELEASE_NOTES_MARKER}\n#{File.read(File.join(@templates, RELEASE_NOTES_TEMPLATE)).strip}\n"
+    "#{text.rstrip}#{newline}#{newline}#{block.gsub("\n", newline)}"
+  end
+
+  def release_guidance?(text)
+    text.include?(RELEASE_NOTES_MARKER) ||
+      text.match?(/^\#{2,}\s+Releas/i) ||
+      text.match?(/release[- ]notes/i)
+  end
+
+  def file_text(file)
+    return nil unless file.is_a?(Hash) && file['type'] == 'file' && file['encoding'] == 'base64'
+
+    text = file.fetch('content', '').unpack1('m').force_encoding(Encoding::UTF_8)
+    text.valid_encoding? ? text : nil
   end
 
   def endpoint_enabled?(path)
@@ -142,8 +169,8 @@ class ReconcileRepositories
     raise
   end
 
-  def content(name, path)
-    @api.get("repos/#{name}/contents/#{path}")
+  def content(name, path, ref)
+    @api.get("repos/#{name}/contents/#{path}?ref=#{ref}")
   rescue GitHub::Error => error
     raise unless error.message.include?('HTTP 404')
     nil
