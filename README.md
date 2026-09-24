@@ -58,7 +58,7 @@ The daily repository-policy workflow reconciles every active repository owned
 by the account, including private repositories and forks. It excludes only
 archived repositories. Empty repositories receive applicable settings but no
 policy-file pull request or default-branch ruleset until they have an initial
-commit. It:
+commit. For repositories that are not forks, it:
 
 - watches all repository activity for the owner;
 - enables issues, discussions, and pull requests, and disables wikis and
@@ -96,6 +96,18 @@ has not published a release yet: the guidance only applies when a release is
 made, and checking release history would add API calls without changing the
 advice. Files are read at the default-branch commit the proposal builds on, so
 the append cannot revert a concurrent change.
+
+Forks follow their upstream's workflow, so the policy leaves most of them
+alone. They are watched, get vulnerability alerts, and have Dependabot security
+pull requests disabled: these only affect the owner's notifications and never
+change the fork's code or history. They receive no other repository settings:
+enabling issues and discussions would draw reports away from upstream, and
+squash-only merges, branch deletion, and merge-option changes would diverge
+from how upstream accepts work. They receive no linear-history ruleset, which
+would reject syncing an upstream that uses merge commits, and no policy-file
+pull request (agent guide, Copilot instructions, triage, funding, release-notes
+guidance, or `dependabot.yml` removal), since those files would then have to be
+kept out of every pull request sent upstream.
 
 Set the `REPOSITORY_POLICY_TOKEN` Actions secret to a fine-grained owner token
 with Administration, Contents, Pull requests, and Metadata access for every

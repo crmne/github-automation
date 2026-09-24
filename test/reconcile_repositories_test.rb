@@ -214,4 +214,62 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_empty api.writes
     assert_includes output, 'policy pull request (.github/triage.yml, AGENTS.md release notes)'
   end
+
+  class RepositoryAPI
+    attr_reader :calls
+
+    def initialize
+      @calls = []
+    end
+
+    def get(path)
+      @calls << "GET #{path}"
+      case path
+      when %r{/subscription\z} then { 'subscribed' => false }
+      when %r{/vulnerability-alerts\z} then raise GitHub::Error, 'GitHub returned HTTP 404'
+      when %r{/automated-security-fixes\z} then { 'enabled' => true }
+      when %r{/git/ref/heads/main\z} then { 'object' => { 'sha' => 'head' } }
+      when %r{/contents/} then raise GitHub::Error, 'GitHub returned HTTP 404'
+      else raise "unexpected GET #{path}"
+      end
+    end
+
+    def all(path)
+      @calls << "GET #{path}"
+      []
+    end
+
+    %i[post put patch delete].each do |verb|
+      define_method(verb) { |path, *_| @calls << "#{verb.upcase} #{path}" }
+    end
+  end
+
+  def reconcile_repository(fork:, dry_run:)
+    api = RepositoryAPI.new
+    repo = { 'full_name' => 'crmne/project', 'default_branch' => 'main', 'size' => 10, 'fork' => fork }
+    reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: dry_run)
+    output, = capture_io { reconciler.send(:reconcile, repo) }
+    [api.calls, output]
+  end
+
+  def test_forks_get_only_watching_and_security_alert_settings
+    calls, output = reconcile_repository(fork: true, dry_run: false)
+
+    assert_equal [
+      'PUT repos/crmne/project/subscription',
+      'PUT repos/crmne/project/vulnerability-alerts',
+      'DELETE repos/crmne/project/automated-security-fixes'
+    ], calls.grep_v(/\AGET /)
+    assert_empty calls.grep(%r{/rulesets|/contents/|/git/|/pulls})
+    refute_includes output, 'repository settings'
+    refute_includes output, 'policy pull request'
+  end
+
+  def test_source_repositories_get_settings_ruleset_and_policy_files
+    _calls, output = reconcile_repository(fork: false, dry_run: true)
+
+    assert_includes output, 'crmne/project: repository settings'
+    assert_includes output, 'crmne/project: linear default-branch history'
+    assert_includes output, 'crmne/project: policy pull request (AGENTS.md'
+  end
 end

@@ -45,7 +45,10 @@ class ReconcileRepositories
     name = repo.fetch('full_name')
     label = repo['private'] ? '[private repository]' : name
     changes = 0
-    settings = REPOSITORY_SETTINGS.reject { |key, value| repo[key.to_s] == value }
+    # A fork follows its upstream's workflow: it gets no settings, ruleset, or
+    # policy files that would diverge from upstream, only watching and alerts.
+    fork = repo['fork'] == true
+    settings = fork ? {} : REPOSITORY_SETTINGS.reject { |key, value| repo[key.to_s] == value }
     changes += change("#{label}: repository settings") { @api.patch("repos/#{name}", settings) } unless settings.empty?
 
     subscription = @api.get("repos/#{name}/subscription")
@@ -62,8 +65,10 @@ class ReconcileRepositories
       end
     end
 
-    changes += reconcile_ruleset(name, label) unless repo['size'].to_i.zero?
-    changes += reconcile_files(repo) if @manage_files && !repo['size'].to_i.zero?
+    unless fork || repo['size'].to_i.zero?
+      changes += reconcile_ruleset(name, label)
+      changes += reconcile_files(repo) if @manage_files
+    end
     changes
   rescue GitHub::Error => error
     warn "Skipped #{label}: #{error.message}"

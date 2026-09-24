@@ -11,7 +11,9 @@ branch. Never publish a release from an unmerged branch.
 This repository changes policy across every active owned repository, including
 private repositories and forks. Archived repositories are the only blanket
 exclusion. Empty repositories receive settings but cannot receive files or a
-default-branch ruleset until they have an initial commit.
+default-branch ruleset until they have an initial commit. Forks follow their
+upstream's workflow: they are only watched and given vulnerability alerts, never
+repository settings, a ruleset, or policy-file pull requests.
 All reconciliation must be idempotent, bounded, safe on partial failure, and
 dry-runnable. Never log repository contents, credentials, tokens, private names,
 or API responses containing account data. A missing or ambiguous permission
