@@ -8,6 +8,9 @@ class ReconcileRepositories
     '.github/triage.yml' => 'triage.yml',
     '.github/FUNDING.yml' => 'FUNDING.yml'
   }.freeze
+  # Forks that are the owner's own projects rather than a way to contribute
+  # upstream. They get the full policy, like any owned repository.
+  OWNED_FORKS = %w[ArduinoTec-Pedals].freeze
   RELEASE_NOTES_TEMPLATE = 'release-notes-guidance.md'
   RELEASE_NOTES_MARKER = '<!-- github-automation: release-notes -->'
 
@@ -47,7 +50,7 @@ class ReconcileRepositories
     changes = 0
     # A fork follows its upstream's workflow: it gets no settings, ruleset, or
     # policy files that would diverge from upstream, only watching and alerts.
-    fork = repo['fork'] == true
+    fork = repo['fork'] == true && !OWNED_FORKS.include?(repo['name'])
     settings = fork ? {} : REPOSITORY_SETTINGS.reject { |key, value| repo[key.to_s] == value }
     changes += change("#{label}: repository settings") { @api.patch("repos/#{name}", settings) } unless settings.empty?
 

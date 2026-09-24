@@ -109,6 +109,10 @@ pull request (agent guide, Copilot instructions, triage, funding, release-notes
 guidance, or `dependabot.yml` removal), since those files would then have to be
 kept out of every pull request sent upstream.
 
+A fork that is the owner's own project rather than a way to contribute upstream
+is listed in `OWNED_FORKS` in `bin/reconcile_repositories.rb` and gets the full
+policy, like any owned repository. `ArduinoTec-Pedals` is the only one.
+
 Set the `REPOSITORY_POLICY_TOKEN` Actions secret to a fine-grained owner token
 with Administration, Contents, Pull requests, and Metadata access for every
 managed repository. Run the workflow manually in dry-run mode first, then set the

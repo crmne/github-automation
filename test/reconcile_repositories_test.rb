@@ -244,12 +244,19 @@ class ReconcileRepositoriesTest < Minitest::Test
     end
   end
 
-  def reconcile_repository(fork:, dry_run:)
+  def reconcile_repository(fork:, dry_run:, name: 'project')
     api = RepositoryAPI.new
-    repo = { 'full_name' => 'crmne/project', 'default_branch' => 'main', 'size' => 10, 'fork' => fork }
+    repo = { 'full_name' => "crmne/#{name}", 'name' => name, 'default_branch' => 'main', 'size' => 10, 'fork' => fork }
     reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: dry_run)
     output, = capture_io { reconciler.send(:reconcile, repo) }
     [api.calls, output]
+  end
+
+  def test_an_owned_fork_gets_the_full_policy
+    calls, output = reconcile_repository(fork: true, dry_run: true, name: 'ArduinoTec-Pedals')
+    assert calls.none? { |method, _path| method == :patch }, 'dry run changes nothing'
+    assert_includes output, 'crmne/ArduinoTec-Pedals: repository settings'
+    assert_includes output, 'crmne/ArduinoTec-Pedals: linear default-branch history'
   end
 
   def test_forks_get_only_watching_and_security_alert_settings
