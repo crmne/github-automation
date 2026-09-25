@@ -52,6 +52,51 @@ retried, up to three attempts for one head commit.
 References: [GitHub's review billing rules](https://docs.github.com/en/copilot/concepts/agents/code-review)
 and [requesting reviews through the API](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review).
 
+## Screenshot requests
+
+Every managed repository asks for before-and-after screenshots of user-visible
+interface changes. This hourly workflow enforces that on open, non-draft pull
+requests in the same repositories as the repository policy: active repositories
+that are not forks, plus `OWNED_FORKS`.
+
+It reads the latest Copilot review of the pull request's current head. A
+`User-visible UI impact:` line decides when Copilot writes one: `none` means no
+visible change, anything else means a visible change. Copilot's current review
+overview usually omits that line, so a finding that asks for screenshots,
+before-and-after or light and dark captures, a screen recording, or visual
+evidence, or a sentence saying the change has user-visible UI impact, counts
+too. Findings under "Resolved since last review" do not. Without a Copilot
+review of the current head, nothing changes.
+
+When the review reports a visible change and the description has no image or
+video (a Markdown image, `<img>` or `<video>`, a GitHub attachment, or a link to
+a PNG, JPEG, GIF, WebP, AVIF, MP4, MOV, or WebM file), the workflow adds a
+`needs-screenshots` label, creating it if needed, and posts one short comment
+asking for screenshots or a short recording of demo content in light and dark
+themes, never real user data. A hidden marker in that comment keeps it from
+ever being posted again on the same pull request, and the label is only added
+with it, so a maintainer who removes the label keeps it removed. Once the
+description shows media, the label is removed; the comment stays. Commented-out
+template text and code blocks do not count as media.
+
+The owner's pull requests follow the same rule. Pull requests from bots such
+as Dependabot, GitHub Actions, and the Copilot coding agent are skipped, as are
+pull requests updated in the last 15 minutes, which gives authors time to finish
+the description. Detection depends on Copilot noticing the visible change, so a
+change Copilot does not flag is not caught.
+
+Only the default branch's script runs. The workflow never checks out or executes
+PR code. Logs contain counts without repository names or PR text, and a pull
+request that hits an API error is counted and skipped.
+
+It uses `REPOSITORY_POLICY_TOKEN`, whose **Pull requests: Read and write**
+permission covers reading reviews and, for pull requests, creating labels,
+labelling, and commenting on every managed repository. Use **Actions >
+Screenshot requests > Run workflow** with `dry_run` enabled to see how many pull
+requests would be labelled or commented on, then set the
+`SCREENSHOT_REQUESTS_ENABLED` Actions variable to `true` to enable scheduled
+runs.
+
 ## Repository policy
 
 The daily repository-policy workflow reconciles every active repository owned

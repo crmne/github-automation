@@ -1,0 +1,36 @@
+name: Screenshot requests
+
+on:
+  schedule:
+    - cron: '29 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Check pull requests without labelling or commenting
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screenshot-requests
+  cancel-in-progress: false
+
+jobs:
+  request:
+    if: vars.SCREENSHOT_REQUESTS_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - run: ruby bin/request_screenshots.rb
+        env:
+          SCREENSHOT_GITHUB_TOKEN: ${{ secrets.REPOSITORY_POLICY_TOKEN }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
