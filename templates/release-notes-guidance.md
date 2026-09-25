@@ -34,4 +34,9 @@ repository's existing release-notes location, before tagging, and have the
 release workflow publish that file as the release description (for example
 softprops/action-gh-release with `body_path` and
 `generate_release_notes: false`). Never leave GitHub's generated notes in
-place. After publishing, verify every media and download link.
+place.
+
+A release is not finished until every image, video, and download link in its
+notes loads. Upload the release media right after the release is published and
+before announcing it, then open the published release and check every image
+and link.
