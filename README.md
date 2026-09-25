@@ -137,9 +137,9 @@ marker only when the file has no heading starting with `Releas` (such as
 `## Releases` or `## Releasing`), never mentions release notes, and does not
 already carry the marker; nothing else in the file changes. Symlinked or
 unreadable files are left alone. Every repository is eligible, even one that
-has not published a release yet: the guidance only applies when a release is
-made, and checking release history would add API calls without changing the
-advice. Files are read at the default-branch commit the proposal builds on, so
+has not published a release yet: apart from the em-dash rule, the guidance
+says it applies only when the repository publishes releases, so checking
+release history would add API calls without changing the advice. Files are read at the default-branch commit the proposal builds on, so
 the append cannot revert a concurrent change.
 
 Forks follow their upstream's workflow, so the policy leaves most of them

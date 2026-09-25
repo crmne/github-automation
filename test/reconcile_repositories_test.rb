@@ -142,6 +142,7 @@ class ReconcileRepositoriesTest < Minitest::Test
 
     assert_includes template, guidance
     assert_includes guidance, '## Releases'
+    assert_includes guidance, 'applies only when this repository publishes'
     assert_includes guidance, 'previous two stable'
     assert_includes guidance, '**Full changelog**:'
     refute_includes guidance, "\u2014"

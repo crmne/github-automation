@@ -3,6 +3,10 @@
 Never use em dashes in user-facing writing, including release titles, release
 notes, and agent responses. Use commas, colons, parentheses, or full stops.
 
+The rest of this section applies only when this repository publishes
+releases. If it has none, skip it, and do not add tags, release workflows, or
+release-notes files just to follow it.
+
 Do not cut a release for every fix. Work accumulates on the default branch
 until there is something substantial to announce: a feature, or a batch of
 fixes worth a changelog entry. The exception is a regression in something just
