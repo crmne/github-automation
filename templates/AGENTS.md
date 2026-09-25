@@ -28,6 +28,25 @@ apply unless a more specific instruction in this repository says otherwise.
   missing visual evidence as a review blocker.
 - Never claim a platform or workflow was tested unless it was actually run.
 
+## Disk use
+
+This section applies only when this repository builds Rust.
+
+- Build through [mbx](https://mr-boxington.jdx.dev). The project `mise.toml`
+  sets `mr_boxington = true` on the Rust tool, at the `rust-toolchain.toml`
+  version, and lists `mr-boxington`. Plain `cargo` still works for
+  contributors who do not use mise or mbx.
+- Give each worktree and each parallel agent its own target directory; mbx
+  manages each checkout's `target/` and shares compiled outputs through its
+  store. Never share one target directory between concurrent builds, and never
+  vary `codegen-units` or other compiler flags per agent.
+- Do not `cargo clean` to save space: use `mbx gc --dry-run` and `mbx gc`.
+  `mbx explain --last` says why a build missed the cache.
+- In CI, use `jdx/mr-boxington-action` after the toolchain setup and run the
+  compiling steps through `mbx`. Release builds do not restore compiler
+  outputs from a cache.
+- Never put build output or large scratch files in `/tmp`.
+
 ## Releases
 
 Never use em dashes in user-facing writing, including release titles, release
