@@ -65,10 +65,9 @@ class ReconcileRepositories
     settings = fork ? {} : REPOSITORY_SETTINGS.reject { |key, value| repo[key.to_s] == value }
     changes += change("#{label}: repository settings") { @api.patch("repos/#{name}", settings) } unless settings.empty?
 
-    subscription = @api.get("repos/#{name}/subscription")
     changes += change("#{label}: watch all activity") do
       @api.put("repos/#{name}/subscription", { subscribed: true, ignored: false })
-    end unless subscription['subscribed'] && !subscription['ignored']
+    end unless watching?(name)
 
     unless endpoint_enabled?("repos/#{name}/vulnerability-alerts")
       changes += change("#{label}: vulnerability alerts") { @api.put("repos/#{name}/vulnerability-alerts") }
@@ -202,6 +201,15 @@ class ReconcileRepositories
 
     text = file.fetch('content', '').unpack1('m').force_encoding(Encoding::UTF_8)
     text.valid_encoding? ? text : nil
+  end
+
+  # GitHub answers 404 when the owner is not watching the repository.
+  def watching?(name)
+    subscription = @api.get("repos/#{name}/subscription")
+    subscription['subscribed'] && !subscription['ignored']
+  rescue GitHub::Error => error
+    return false if error.message.include?('HTTP 404')
+    raise
   end
 
   # GitHub answers 200 with {"enabled": false} when security-update pull

@@ -293,15 +293,19 @@ class ReconcileRepositoriesTest < Minitest::Test
   class RepositoryAPI
     attr_reader :calls
 
-    def initialize(security_fixes: { 'enabled' => true })
+    def initialize(security_fixes: { 'enabled' => true }, subscription: { 'subscribed' => false })
       @calls = []
       @security_fixes = security_fixes
+      @subscription = subscription
     end
 
     def get(path)
       @calls << "GET #{path}"
       case path
-      when %r{/subscription\z} then { 'subscribed' => false }
+      when %r{/subscription\z}
+        raise GitHub::Error, 'GitHub returned HTTP 404' if @subscription == :not_found
+
+        @subscription
       when %r{/vulnerability-alerts\z} then raise GitHub::Error, 'GitHub returned HTTP 404'
       when %r{/automated-security-fixes\z}
         raise GitHub::Error, 'GitHub returned HTTP 404' if @security_fixes == :not_found
@@ -323,8 +327,9 @@ class ReconcileRepositoriesTest < Minitest::Test
     end
   end
 
-  def reconcile_repository(fork:, dry_run:, name: 'project', security_fixes: { 'enabled' => true })
-    api = RepositoryAPI.new(security_fixes: security_fixes)
+  def reconcile_repository(fork:, dry_run:, name: 'project', security_fixes: { 'enabled' => true },
+                           subscription: { 'subscribed' => false })
+    api = RepositoryAPI.new(security_fixes: security_fixes, subscription: subscription)
     repo = { 'full_name' => "crmne/#{name}", 'name' => name, 'default_branch' => 'main', 'size' => 10, 'fork' => fork }
     reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: dry_run)
     output, = capture_io { reconciler.send(:reconcile, repo) }
@@ -349,6 +354,20 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_empty calls.grep(%r{/rulesets|/contents/|/git/|/pulls})
     refute_includes output, 'repository settings'
     refute_includes output, 'policy pull request'
+  end
+
+  def test_watches_repositories_github_reports_as_not_watched_with_404
+    calls, output = reconcile_repository(fork: true, dry_run: false, subscription: :not_found)
+
+    assert_includes calls, 'PUT repos/crmne/project/subscription'
+    assert_includes calls, 'PUT repos/crmne/project/vulnerability-alerts'
+    refute_includes output, 'Skipped'
+  end
+
+  def test_leaves_watched_repositories_alone
+    calls, = reconcile_repository(fork: true, dry_run: false, subscription: { 'subscribed' => true, 'ignored' => false })
+
+    refute_includes calls, 'PUT repos/crmne/project/subscription'
   end
 
   def test_leaves_security_update_pull_requests_alone_when_already_disabled
