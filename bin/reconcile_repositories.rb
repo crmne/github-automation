@@ -73,7 +73,7 @@ class ReconcileRepositories
     unless endpoint_enabled?("repos/#{name}/vulnerability-alerts")
       changes += change("#{label}: vulnerability alerts") { @api.put("repos/#{name}/vulnerability-alerts") }
     end
-    if endpoint_enabled?("repos/#{name}/automated-security-fixes")
+    if security_fixes_enabled?(name)
       changes += change("#{label}: disable Dependabot security pull requests") do
         @api.delete("repos/#{name}/automated-security-fixes")
       end
@@ -202,6 +202,17 @@ class ReconcileRepositories
 
     text = file.fetch('content', '').unpack1('m').force_encoding(Encoding::UTF_8)
     text.valid_encoding? ? text : nil
+  end
+
+  # GitHub answers 200 with {"enabled": false} when security-update pull
+  # requests are off, so only an explicit false counts as disabled. Anything
+  # else is disabled again rather than trusted, which is harmless when repeated.
+  def security_fixes_enabled?(name)
+    status = @api.get("repos/#{name}/automated-security-fixes")
+    !(status.is_a?(Hash) && status['enabled'] == false)
+  rescue GitHub::Error => error
+    return false if error.message.include?('HTTP 404')
+    raise
   end
 
   def endpoint_enabled?(path)

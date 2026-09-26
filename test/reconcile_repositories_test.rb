@@ -293,8 +293,9 @@ class ReconcileRepositoriesTest < Minitest::Test
   class RepositoryAPI
     attr_reader :calls
 
-    def initialize
+    def initialize(security_fixes: { 'enabled' => true })
       @calls = []
+      @security_fixes = security_fixes
     end
 
     def get(path)
@@ -302,7 +303,10 @@ class ReconcileRepositoriesTest < Minitest::Test
       case path
       when %r{/subscription\z} then { 'subscribed' => false }
       when %r{/vulnerability-alerts\z} then raise GitHub::Error, 'GitHub returned HTTP 404'
-      when %r{/automated-security-fixes\z} then { 'enabled' => true }
+      when %r{/automated-security-fixes\z}
+        raise GitHub::Error, 'GitHub returned HTTP 404' if @security_fixes == :not_found
+
+        @security_fixes
       when %r{/git/ref/heads/main\z} then { 'object' => { 'sha' => 'head' } }
       when %r{/contents/} then raise GitHub::Error, 'GitHub returned HTTP 404'
       else raise "unexpected GET #{path}"
@@ -319,8 +323,8 @@ class ReconcileRepositoriesTest < Minitest::Test
     end
   end
 
-  def reconcile_repository(fork:, dry_run:, name: 'project')
-    api = RepositoryAPI.new
+  def reconcile_repository(fork:, dry_run:, name: 'project', security_fixes: { 'enabled' => true })
+    api = RepositoryAPI.new(security_fixes: security_fixes)
     repo = { 'full_name' => "crmne/#{name}", 'name' => name, 'default_branch' => 'main', 'size' => 10, 'fork' => fork }
     reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: dry_run)
     output, = capture_io { reconciler.send(:reconcile, repo) }
@@ -345,6 +349,23 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_empty calls.grep(%r{/rulesets|/contents/|/git/|/pulls})
     refute_includes output, 'repository settings'
     refute_includes output, 'policy pull request'
+  end
+
+  def test_leaves_security_update_pull_requests_alone_when_already_disabled
+    [{ 'enabled' => false, 'paused' => false }, :not_found].each do |status|
+      calls, output = reconcile_repository(fork: true, dry_run: false, security_fixes: status)
+
+      refute_includes calls, 'DELETE repos/crmne/project/automated-security-fixes', status.inspect
+      refute_includes output, 'disable Dependabot security pull requests', status.inspect
+    end
+  end
+
+  def test_disables_security_update_pull_requests_unless_reported_disabled
+    [{ 'enabled' => true }, {}, nil].each do |status|
+      calls, = reconcile_repository(fork: true, dry_run: false, security_fixes: status)
+
+      assert_includes calls, 'DELETE repos/crmne/project/automated-security-fixes', status.inspect
+    end
   end
 
   def test_source_repositories_get_settings_ruleset_and_policy_files
