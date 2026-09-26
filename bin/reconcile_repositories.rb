@@ -1,3 +1,4 @@
+require 'digest'
 require_relative 'review_missing_prs'
 
 class ReconcileRepositories
@@ -13,6 +14,16 @@ class ReconcileRepositories
   OWNED_FORKS = %w[ArduinoTec-Pedals].freeze
   RELEASE_NOTES_TEMPLATE = 'release-notes-guidance.md'
   RELEASE_NOTES_MARKER = '<!-- github-automation: release-notes -->'
+  RELEASE_NOTES_END_MARKER = '<!-- /github-automation: release-notes -->'
+  # SHA-256 digests of every earlier release-notes-guidance.md, stripped and with
+  # LF line endings. A managed block matching one of these was never edited in
+  # its repository, so it is safe to replace with the current guidance. Add the
+  # outgoing version's digest here whenever the template changes.
+  PREVIOUS_RELEASE_NOTES_DIGESTS = %w[
+    2dd750066b7b3737e051acc7c869f6b53de08fa5a3b03bade1b795b2738505e6
+    ff23c373cbbf056ddef4e87140c65271e99546b6786120969877ed866709d6d0
+    81fe4319ec361e19ad3c85aa5abd09c4a59a9063c5ae1117b4e39b3b66a4c0af
+  ].freeze
 
   REPOSITORY_SETTINGS = {
     has_issues: true,
@@ -109,7 +120,7 @@ class ReconcileRepositories
     sha = @api.get("repos/#{name}/git/ref/heads/#{default_branch}").dig('object', 'sha')
     files = MANAGED_FILES.keys.to_h { |path| [path, content(name, path, sha)] }
     missing = MANAGED_FILES.select { |path, _| files[path].nil? }
-    agents = files['AGENTS.md'] && agents_with_release_notes(files['AGENTS.md'])
+    agents = files['AGENTS.md'] && agents_with_release_notes(files['AGENTS.md'], label)
     dependabot = content(name, '.github/dependabot.yml', sha)
     return 0 if missing.empty? && !agents && !dependabot
 
@@ -144,16 +155,40 @@ class ReconcileRepositories
     { path: path, mode: '100644', type: 'blob', sha: blob.fetch('sha') }
   end
 
-  # Returns AGENTS.md with the release-notes guidance appended, or nil when the
-  # file already has release guidance, carries the marker, or cannot be read as
-  # UTF-8 text (symlinks, large files), so existing content is never replaced.
-  def agents_with_release_notes(file)
+  # Returns AGENTS.md with current release-notes guidance, or nil when nothing
+  # should change. A file without the marker gets the guidance appended unless
+  # it already has its own release guidance. A marked block is replaced only
+  # when it holds an unedited earlier version; a locally edited block is
+  # reported and left alone. Files that cannot be read as UTF-8 text
+  # (symlinks, large files) are never touched.
+  def agents_with_release_notes(file, label)
     text = file_text(file)
-    return nil if text.nil? || release_guidance?(text)
+    return nil if text.nil?
 
     newline = text.include?("\r\n") ? "\r\n" : "\n"
-    block = "#{RELEASE_NOTES_MARKER}\n#{File.read(File.join(@templates, RELEASE_NOTES_TEMPLATE)).strip}\n"
-    "#{text.rstrip}#{newline}#{newline}#{block.gsub("\n", newline)}"
+    guidance = File.read(File.join(@templates, RELEASE_NOTES_TEMPLATE)).strip
+    block = "#{RELEASE_NOTES_MARKER}\n#{guidance}\n#{RELEASE_NOTES_END_MARKER}\n".gsub("\n", newline)
+    start = text.index(RELEASE_NOTES_MARKER)
+    if start.nil?
+      return nil if release_guidance?(text)
+
+      return "#{text.rstrip}#{newline}#{newline}#{block}"
+    end
+
+    body_start = start + RELEASE_NOTES_MARKER.length
+    finish = text.index(RELEASE_NOTES_END_MARKER, body_start)
+    # Blocks appended before the end marker existed run to the end of the file.
+    body = finish ? text[body_start...finish] : text[body_start..]
+    rest = finish ? text[(finish + RELEASE_NOTES_END_MARKER.length)..].sub(/\A\r?\n/, '') : ''
+    normalized = body.gsub("\r\n", "\n").strip
+    return nil if finish && normalized == guidance
+
+    unless normalized == guidance || PREVIOUS_RELEASE_NOTES_DIGESTS.include?(Digest::SHA256.hexdigest(normalized))
+      warn "Skipped #{label} AGENTS.md release notes: edited locally"
+      return nil
+    end
+
+    "#{text[0...start]}#{block}#{rest}"
   end
 
   def release_guidance?(text)

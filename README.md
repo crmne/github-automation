@@ -115,32 +115,49 @@ commit. For repositories that are not forks, it:
   requests;
 - opens one pull request when `AGENTS.md`, Copilot instructions, triage policy,
   or GitHub Sponsors funding configuration is missing;
-- appends release-notes guidance to an existing `AGENTS.md` that has none, in
-  that same pull request; and
+- appends release-notes guidance to an existing `AGENTS.md` that has none, or
+  updates an unedited earlier copy of it, in that same pull request; and
 - removes `.github/dependabot.yml` in that same pull request so version-update
   pull requests stay disabled.
 
 The baseline agent policy uses trunk-based maintainer development and requires
-visual evidence for user-interface changes. Existing policy files are never
-overwritten because project-specific instructions, such as Spotifast's, are
-more useful than a generic replacement. All files for a repository are added in
+visual evidence for user-interface changes. Existing policy files, apart from
+the managed release-notes section, are never overwritten because
+project-specific instructions, such as Spotifast's, are more useful than a
+generic replacement. All files for a repository are added in
 one commit so the policy proposal triggers only one CI run per workflow.
 
 The release-notes guidance (`templates/release-notes-guidance.md`) follows
-Spotifast's style: read the previous two stable releases, a short summary,
-media, `New` and `Fixed` items that credit implementers and reporters, a
-`Thanks` section, a full-changelog link, notes committed before tagging and
-published instead of GitHub's generated notes, and no release for every fix.
-New `AGENTS.md` files carry it as a `## Releases` section. An existing
-`AGENTS.md` gets it appended after a `<!-- github-automation: release-notes -->`
-marker only when the file has no heading starting with `Releas` (such as
-`## Releases` or `## Releasing`), never mentions release notes, and does not
-already carry the marker; nothing else in the file changes. Symlinked or
-unreadable files are left alone. Every repository is eligible, even one that
-has not published a release yet: apart from the em-dash rule, the guidance
-says it applies only when the repository publishes releases, so checking
-release history would add API calls without changing the advice. Files are read at the default-branch commit the proposal builds on, so
-the append cannot revert a concurrent change.
+Spotifast's style: read the previous two stable releases (or the most recent
+prereleases when there are fewer), a short summary, media, `New` and `Fixed`
+items that credit implementers and reporters, a `Thanks` section, a
+full-changelog link, hand-written notes committed before tagging instead of
+generated ones, and no release for every fix. It states the outcome rather than
+one mechanism: `body_path`, `gh release create --notes-file`, GoReleaser's
+`--release-notes`, and `gh release edit --notes-file` all qualify, and a
+repository whose release path still generates notes switches it when preparing
+its next release. Every repository is eligible, even one that has not
+published a release yet: apart from the em-dash rule, the guidance says it
+applies only when the repository publishes GitHub releases, so checking release
+history would add API calls without changing the advice.
+
+The guidance is one account-wide section, not a per-repository document. It
+sits between `<!-- github-automation: release-notes -->` and
+`<!-- /github-automation: release-notes -->` markers, in new `AGENTS.md` files
+and when appended to an existing `AGENTS.md`. It is appended only when the file
+has no marker, no heading starting with `Releas` (such as `## Releases` or
+`## Releasing`), and no mention of release notes. A marked section that holds
+the current guidance is left alone. One that holds an unedited earlier version
+is replaced in place; blocks appended before the end marker existed run to the
+end of the file and are recognized the same way. Earlier versions are known by
+the SHA-256 digests in `PREVIOUS_RELEASE_NOTES_DIGESTS`, so add the outgoing
+digest whenever the template changes. A section edited in its repository is
+reported as edited locally and never overwritten: fix the template here instead,
+and replace the local edit by hand. The section and the Copilot instructions
+both ask reviewers to report a mismatch rather than edit inside the markers.
+Nothing else in the file changes, and symlinked or unreadable files are left
+alone. Files are read at the default-branch commit the proposal builds on, so
+an update cannot revert a concurrent change.
 
 Forks follow their upstream's workflow, so the policy leaves most of them
 alone. They are watched, get vulnerability alerts, and have Dependabot security

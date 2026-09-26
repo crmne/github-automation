@@ -12,3 +12,7 @@ or recommend merging code that was not substantively evaluated.
 Keep maintainer-directed work on the default branch with linear history. Pull
 requests are for outside contributions unless the maintainer explicitly asks
 for one.
+
+`AGENTS.md` sections between `<!-- github-automation: ... -->` markers are
+maintained account-wide and replaced automatically. When one does not fit this
+repository, report the mismatch instead of proposing edits inside the markers.

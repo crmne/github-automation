@@ -129,8 +129,8 @@ class ReconcileRepositoriesTest < Minitest::Test
   def reconcile_files(files, dry_run: false)
     api = FilesAPI.new(COMPLETE.merge(files))
     reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: dry_run)
-    output, = capture_io { @changes = reconciler.send(:reconcile_files, REPO) }
-    [api, output]
+    output, error = capture_io { @changes = reconciler.send(:reconcile_files, REPO) }
+    [api, output, error]
   end
 
   def guidance
@@ -140,12 +140,27 @@ class ReconcileRepositoriesTest < Minitest::Test
   def test_agents_template_contains_release_notes_guidance
     template = File.read(File.join(TEMPLATES, 'AGENTS.md'))
 
-    assert_includes template, guidance
+    assert_includes template, managed_block
     assert_includes guidance, '## Releases'
     assert_includes guidance, 'applies only when this repository publishes'
     assert_includes guidance, 'previous two stable'
+    assert_includes guidance, 'If there are fewer'
     assert_includes guidance, '**Full changelog**:'
     refute_includes guidance, "\u2014"
+  end
+
+  def managed_block(guidance_text = guidance)
+    "#{ReconcileRepositories::RELEASE_NOTES_MARKER}\n#{guidance_text}\n#{ReconcileRepositories::RELEASE_NOTES_END_MARKER}\n"
+  end
+
+  def test_guidance_names_every_common_publishing_path
+    %w[body_path --notes-file --release-notes].each { |path| assert_includes guidance, path }
+  end
+
+  def test_current_guidance_is_not_listed_as_a_previous_version
+    digest = Digest::SHA256.hexdigest(guidance)
+
+    refute_includes ReconcileRepositories::PREVIOUS_RELEASE_NOTES_DIGESTS, digest
   end
 
   def test_appends_release_notes_guidance_to_existing_agents_file
@@ -154,8 +169,7 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_equal 1, @changes
     assert_equal 1, api.blobs.size
     appended = api.blobs.first
-    assert appended.start_with?("# Project\n\nKeep it small.\n\n#{ReconcileRepositories::RELEASE_NOTES_MARKER}\n")
-    assert appended.end_with?("#{guidance}\n")
+    assert_equal "# Project\n\nKeep it small.\n\n#{managed_block}", appended
     assert_equal [{ path: 'AGENTS.md', mode: '100644', type: 'blob', sha: 'blob1' }], api.trees.first.fetch(:tree)
   end
 
@@ -170,13 +184,73 @@ class ReconcileRepositoriesTest < Minitest::Test
       "# Guide\n\n## Releases\n\nA release is not the tag alone.\n",
       "# Guide\n\n## Releasing\n\nTag from main.\n",
       "# Guide\n\nRead the previous releases before writing release notes.\n",
-      "# Guide\n\n#{ReconcileRepositories::RELEASE_NOTES_MARKER}\nEdited by hand.\n"
+      "# Guide\n\n#{managed_block}\n## Communication\n"
     ].each do |agents|
       api, output = reconcile_files({ 'AGENTS.md' => agents })
 
       assert_equal 0, @changes, agents
       assert_empty api.writes, agents
       assert_empty output, agents
+    end
+  end
+
+  # The appended form deployed before the end marker existed: the block runs
+  # to the end of the file.
+  def legacy_block(version)
+    "#{ReconcileRepositories::RELEASE_NOTES_MARKER}\n#{previous_guidance(version)}\n"
+  end
+
+  def previous_guidance(version)
+    File.read(File.expand_path("fixtures/release-notes-guidance-#{version}.md", __dir__)).strip
+  end
+
+  def test_fixtures_cover_every_previous_guidance_digest
+    digests = %w[v1 v2 v3].map { |version| Digest::SHA256.hexdigest(previous_guidance(version)) }
+
+    assert_equal ReconcileRepositories::PREVIOUS_RELEASE_NOTES_DIGESTS, digests
+  end
+
+  def test_replaces_every_unedited_legacy_block_with_the_current_guidance
+    %w[v1 v2 v3].each do |version|
+      api, = reconcile_files({ 'AGENTS.md' => "# Project\n\n#{legacy_block(version)}" })
+
+      assert_equal 1, @changes, version
+      assert_equal ["# Project\n\n#{managed_block}"], api.blobs, version
+    end
+  end
+
+  def test_replaces_an_unedited_block_in_place_and_keeps_what_follows
+    agents = "# Guide\n\n#{managed_block(previous_guidance('v3'))}\n## Communication\n\nBe brief.\n"
+    api, = reconcile_files({ 'AGENTS.md' => agents })
+
+    assert_equal ["# Guide\n\n#{managed_block}\n## Communication\n\nBe brief.\n"], api.blobs
+  end
+
+  def test_upgrades_a_current_legacy_block_by_adding_the_end_marker
+    api, = reconcile_files({ 'AGENTS.md' => "# Project\n\n#{ReconcileRepositories::RELEASE_NOTES_MARKER}\n#{guidance}\n" })
+
+    assert_equal ["# Project\n\n#{managed_block}"], api.blobs
+  end
+
+  def test_replaces_windows_line_ending_blocks_without_mixing_line_endings
+    agents = "# Project\n\n#{legacy_block('v3')}".gsub("\n", "\r\n")
+    api, = reconcile_files({ 'AGENTS.md' => agents })
+
+    assert_equal ["# Project\n\n#{managed_block}".gsub("\n", "\r\n")], api.blobs
+  end
+
+  def test_reports_and_keeps_locally_edited_blocks
+    [
+      "# Guide\n\n#{ReconcileRepositories::RELEASE_NOTES_MARKER}\nEdited by hand.\n",
+      "# Guide\n\n#{legacy_block('v3')}\n## Local notes\n",
+      "# Guide\n\n#{managed_block(previous_guidance('v3').sub('Never use', 'Avoid'))}"
+    ].each do |agents|
+      api, output, error = reconcile_files({ 'AGENTS.md' => agents })
+
+      assert_equal 0, @changes, agents
+      assert_empty api.writes, agents
+      assert_empty output, agents
+      assert_equal "Skipped crmne/project AGENTS.md release notes: edited locally\n", error, agents
     end
   end
 
