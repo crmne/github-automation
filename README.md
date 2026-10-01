@@ -114,9 +114,13 @@ commit. For repositories that are not forks, it:
 - enables vulnerability alerts but disables Dependabot security-update pull
   requests;
 - opens one pull request when `AGENTS.md`, Copilot instructions, triage policy,
-  or GitHub Sponsors funding configuration is missing;
+  the Copilot Triage workflows, or GitHub Sponsors funding configuration is
+  missing;
 - appends release-notes guidance to an existing `AGENTS.md` that has none, or
-  updates an unedited earlier copy of it, in that same pull request; and
+  updates an unedited earlier copy of it, in that same pull request;
+- upgrades an unedited earlier `issue-assessment.yml` to the current Copilot
+  Triage workflow, and appends the account's board and pull request sections to
+  a triage policy that configures neither, in that same pull request; and
 - removes `.github/dependabot.yml` in that same pull request so version-update
   pull requests stay disabled.
 
@@ -126,6 +130,30 @@ the managed release-notes section, are never overwritten because
 project-specific instructions, such as Spotifast's, are more useful than a
 generic replacement. All files for a repository are added in
 one commit so the policy proposal triggers only one CI run per workflow.
+
+### Copilot Triage
+
+Every repository gets two workflows from
+[Copilot Triage](https://github.com/crmne/copilot-triage).
+`issue-assessment.yml` triages issues, discussions, and pull requests: it
+answers, labels, moves discussions that are really issues, requests a Copilot
+review when a change deserves one, and puts the item on the account's
+[Maintainer board](https://github.com/users/crmne/projects/1). `board.yml` runs
+the board's daily sweep without a model. Both run only where the
+`COPILOT_ISSUE_ASSESSMENT_ENABLED` variable is `true`, so a repository opts in
+with that variable and its secrets:
+
+- `COPILOT_GITHUB_TOKEN`: the owner's fine-grained token with Copilot Requests
+  and, to request reviews, Pull requests: Read and write.
+- `TRIAGE_PROJECT_TOKEN`: a classic token with the `project` and `repo` scopes,
+  for the board. Without it, triage and the sweep skip the board quietly.
+
+An `issue-assessment.yml` matching one of `PREVIOUS_WORKFLOW_DIGESTS` was never
+edited in its repository and is replaced with the current template; one edited
+by hand is reported and left alone. Add the outgoing digest whenever the
+template changes. Existing triage policies are project-specific, so only the
+`pull_requests` and `board` sections are appended, and only to a policy that
+configures neither.
 
 The release-notes guidance (`templates/release-notes-guidance.md`) follows
 Spotifast's style: read the previous two stable releases (or the most recent
@@ -176,8 +204,9 @@ is listed in `OWNED_FORKS` in `bin/reconcile_repositories.rb` and gets the full
 policy, like any owned repository. `ArduinoTec-Pedals` is the only one.
 
 Set the `REPOSITORY_POLICY_TOKEN` Actions secret to a fine-grained owner token
-with Administration, Contents, Pull requests, and Metadata access for every
-managed repository. Run the workflow manually in dry-run mode first, then set the
+with Administration, Contents, Pull requests, Workflows, and Metadata access for
+every managed repository. Workflows access is what allows the policy pull
+request to add or upgrade the Copilot Triage workflows. Run the workflow manually in dry-run mode first, then set the
 `REPOSITORY_POLICY_ENABLED` variable to `true`.
 
 Two settings cannot currently be fully enforced through the documented REST

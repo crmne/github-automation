@@ -122,7 +122,9 @@ class ReconcileRepositoriesTest < Minitest::Test
   COMPLETE = {
     '.github/copilot-instructions.md' => "copilot\n",
     '.github/triage.yml' => "triage\n",
-    '.github/FUNDING.yml' => "github: crmne\n"
+    '.github/FUNDING.yml' => "github: crmne\n",
+    '.github/workflows/issue-assessment.yml' => File.read(File.join(TEMPLATES, 'issue-assessment.yml')),
+    '.github/workflows/board.yml' => "board\n"
   }.freeze
   REPO = { 'full_name' => 'crmne/project', 'default_branch' => 'main' }.freeze
 
@@ -280,6 +282,97 @@ class ReconcileRepositoriesTest < Minitest::Test
     contents = api.reads.grep(%r{/contents/})
     refute_empty contents
     assert(contents.all? { |path| path.end_with?('?ref=head') })
+  end
+
+  # Every other managed file is current, so only the change under test shows.
+  def reconcile_current(files)
+    reconcile_files({ 'AGENTS.md' => File.read(File.join(TEMPLATES, 'AGENTS.md')) }.merge(files))
+  end
+
+  def workflow_template
+    File.read(File.join(TEMPLATES, 'issue-assessment.yml'))
+  end
+
+  def previous_workflow(version)
+    File.read(File.expand_path("fixtures/issue-assessment-#{version}.yml", __dir__))
+  end
+
+  def test_fixtures_cover_every_previous_workflow_digest
+    digests = %w[v1 v2 v3].map { |version| Digest::SHA256.hexdigest(previous_workflow(version).strip) }
+
+    assert_equal ReconcileRepositories::PREVIOUS_WORKFLOW_DIGESTS, digests
+    refute_includes digests, Digest::SHA256.hexdigest(workflow_template.strip)
+  end
+
+  def test_upgrades_every_unedited_workflow_to_triage_pull_requests_and_the_board
+    %w[v1 v2 v3].each do |version|
+      api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => previous_workflow(version) })
+
+      assert_equal [workflow_template], api.blobs, version
+      assert_equal ['.github/workflows/issue-assessment.yml'], api.trees.first.fetch(:tree).map { |entry| entry[:path] }
+    end
+    assert_includes workflow_template, 'pull_request_target:'
+    assert_includes workflow_template, 'secrets.TRIAGE_PROJECT_TOKEN'
+    assert_includes workflow_template, "vars.COPILOT_ISSUE_ASSESSMENT_ENABLED == 'true'"
+  end
+
+  def test_upgrades_a_workflow_saved_without_a_final_newline
+    api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => previous_workflow('v1').chomp })
+
+    assert_equal [workflow_template], api.blobs
+  end
+
+  def test_reports_and_keeps_a_locally_edited_workflow
+    edited = previous_workflow('v1').sub('timeout-minutes: 5', 'timeout-minutes: 9')
+    api, output, error = reconcile_current({ '.github/workflows/issue-assessment.yml' => edited })
+
+    assert_equal 0, @changes
+    assert_empty api.writes
+    assert_empty output
+    assert_equal "Skipped crmne/project issue assessment workflow: edited locally\n", error
+  end
+
+  def sections
+    File.read(File.join(TEMPLATES, 'triage-sections.yml'))
+  end
+
+  def test_appends_the_board_and_pull_request_sections_to_a_policy_without_them
+    policy = "labels:\n  bug: A problem.\ninstructions: |\n  Be brief.\n"
+    api, = reconcile_current({ '.github/triage.yml' => policy })
+
+    assert_equal ["#{policy}\n#{sections}"], api.blobs
+    merged = YAML.safe_load(api.blobs.first)
+    assert_equal 'https://github.com/users/crmne/projects/1', merged.dig('board', 'project')
+    assert_equal "Be brief.\n", merged.fetch('instructions')
+  end
+
+  def test_leaves_a_policy_that_configures_either_section
+    ["labels: {}\nboard:\n  project: https://github.com/orgs/acme/projects/2\n",
+     "labels: {}\npull_requests:\n  reviews: off\n"].each do |policy|
+      api, = reconcile_current({ '.github/triage.yml' => policy })
+
+      assert_equal 0, @changes, policy
+      assert_empty api.writes, policy
+    end
+  end
+
+  def test_reports_an_invalid_policy_instead_of_appending
+    _api, _output, error = reconcile_current({ '.github/triage.yml' => "labels: [unclosed\n" })
+
+    assert_equal 0, @changes
+    assert_includes error, 'triage policy sections: not valid YAML'
+  end
+
+  def test_new_repositories_get_the_workflows_and_a_policy_with_both_sections
+    api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => nil, '.github/workflows/board.yml' => nil,
+                             '.github/triage.yml' => nil })
+
+    paths = api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
+    assert_equal ['.github/triage.yml', '.github/workflows/issue-assessment.yml', '.github/workflows/board.yml'], paths
+    policy = YAML.safe_load(File.read(File.join(TEMPLATES, 'triage.yml')))
+    assert_equal 'copilot', policy.dig('pull_requests', 'reviews')
+    assert_equal 'crmne', policy.dig('board', 'assign_urgent_to')
+    assert_includes File.read(File.join(TEMPLATES, 'board.yml')), 'mode: sweep'
   end
 
   def test_dry_run_reports_release_notes_without_writing
