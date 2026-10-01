@@ -36,3 +36,12 @@ instructions: |
   suggest logging sensitive API responses or weakening token scope as a first
   step. Distinguish repository policy failures from failures in the project
   being inspected.
+
+# github-automation: the account's board and pull request triage
+pull_requests:
+  reviews: copilot
+  out_of_scope: suggest
+
+board:
+  project: https://github.com/users/crmne/projects/1
+  assign_urgent_to: crmne
