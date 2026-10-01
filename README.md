@@ -148,9 +148,11 @@ with that variable and its secrets:
 - `TRIAGE_PROJECT_TOKEN`: a classic token with the `project` and `repo` scopes,
   for the board. Without it, triage and the sweep skip the board quietly.
 
-An `issue-assessment.yml` matching one of `PREVIOUS_WORKFLOW_DIGESTS` was never
-edited in its repository and is replaced with the current template; one edited
-by hand is reported and left alone. Add the outgoing digest whenever the
+An `issue-assessment.yml` or `board.yml` matching one of its
+`PREVIOUS_WORKFLOW_DIGESTS` was never edited in its repository and is replaced
+with the current template; one edited by hand is reported and left alone. The
+current triage workflow also runs when Copilot posts a review, and the board
+sweep sends forks' pull requests back to it. Add the outgoing digest whenever the
 template changes. Existing triage policies are project-specific, so only the
 `pull_requests` and `board` sections are appended, and only to a policy that
 configures neither.

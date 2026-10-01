@@ -12,15 +12,21 @@ class ReconcileRepositories
     '.github/workflows/issue-assessment.yml' => 'issue-assessment.yml',
     '.github/workflows/board.yml' => 'board.yml'
   }.freeze
-  WORKFLOW_PATH = '.github/workflows/issue-assessment.yml'
-  # SHA-256 digests of every earlier issue-assessment.yml, stripped and with LF
-  # line endings. A workflow matching one of these was never edited in its
-  # repository, so it is upgraded to the current template.
-  PREVIOUS_WORKFLOW_DIGESTS = %w[
-    4dd98a77f8fd80de243fa8f0abfd5a763b5a2e18f90b86bac38c0c44eb7282ba
-    9e0602557064cb117fb1d084206c1d45de7db4f9ac6595b2d85461b772741b98
-    00f51f85d30d4b37ef47163e9bfe9cf9d2a1f8db7f3c5e9184b8e3fe23713bef
-  ].freeze
+  # SHA-256 digests of every earlier version of each Copilot Triage workflow,
+  # stripped and with LF line endings. A workflow matching one of these was
+  # never edited in its repository, so it is upgraded to the current template.
+  # Add the outgoing digest whenever a template changes.
+  PREVIOUS_WORKFLOW_DIGESTS = {
+    '.github/workflows/issue-assessment.yml' => %w[
+      4dd98a77f8fd80de243fa8f0abfd5a763b5a2e18f90b86bac38c0c44eb7282ba
+      9e0602557064cb117fb1d084206c1d45de7db4f9ac6595b2d85461b772741b98
+      00f51f85d30d4b37ef47163e9bfe9cf9d2a1f8db7f3c5e9184b8e3fe23713bef
+      ce3f2d3a94edc81213f2da3ff8ecfb5701caac97fc3e80a4546f37e12ff5dc0c
+    ],
+    '.github/workflows/board.yml' => %w[
+      f22f01965279b998b8bff2e1561aafb10bb8a1cddd69fbbc066f06a624ecd303
+    ]
+  }.freeze
   TRIAGE_SECTIONS_TEMPLATE = 'triage-sections.yml'
   # Forks that are the owner's own projects rather than a way to contribute
   # upstream. They get the full policy, like any owned repository.
@@ -133,13 +139,16 @@ class ReconcileRepositories
     files = MANAGED_FILES.keys.to_h { |path| [path, content(name, path, sha)] }
     missing = MANAGED_FILES.select { |path, _| files[path].nil? }
     agents = files['AGENTS.md'] && agents_with_release_notes(files['AGENTS.md'], label)
-    workflow = files[WORKFLOW_PATH] && upgraded_workflow(files[WORKFLOW_PATH], label)
+    workflows = PREVIOUS_WORKFLOW_DIGESTS.keys.filter_map do |path|
+      upgraded = files[path] && upgraded_workflow(path, files[path], label)
+      [path, upgraded] if upgraded
+    end
     policy = files['.github/triage.yml'] && triage_with_sections(files['.github/triage.yml'], label)
     dependabot = content(name, '.github/dependabot.yml', sha)
-    return 0 if missing.empty? && !agents && !workflow && !policy && !dependabot
+    return 0 if missing.empty? && !agents && workflows.empty? && !policy && !dependabot
 
     description = (missing.keys + (agents ? ['AGENTS.md release notes'] : []) +
-      (workflow ? ['upgrade issue assessment workflow'] : []) +
+      workflows.map { |path, _| "upgrade #{File.basename(path)}" } +
       (policy ? ['triage board and pull requests'] : []) +
       (dependabot ? ['remove .github/dependabot.yml'] : [])).join(', ')
     return change("#{label}: policy pull request (#{description})") {} if @dry_run
@@ -151,7 +160,7 @@ class ReconcileRepositories
     base_tree = @api.get("repos/#{name}/git/commits/#{sha}").dig('tree', 'sha')
     entries = missing.map { |path, template| blob_entry(name, path, File.read(File.join(@templates, template))) }
     entries << blob_entry(name, 'AGENTS.md', agents) if agents
-    entries << blob_entry(name, WORKFLOW_PATH, workflow) if workflow
+    workflows.each { |path, text| entries << blob_entry(name, path, text) }
     entries << blob_entry(name, '.github/triage.yml', policy) if policy
     entries << { path: '.github/dependabot.yml', mode: '100644', type: 'blob', sha: nil } if dependabot
     tree = @api.post("repos/#{name}/git/trees", { base_tree: base_tree, tree: entries })
@@ -209,18 +218,19 @@ class ReconcileRepositories
     "#{text[0...start]}#{block}#{rest}"
   end
 
-  # Returns the current issue assessment workflow when the repository has an
-  # unedited earlier one, or nil. A locally edited workflow is reported and kept.
-  def upgraded_workflow(file, label)
+  # Returns the current template when the repository has an unedited earlier
+  # version of the workflow at path, or nil. A locally edited one is reported
+  # and kept.
+  def upgraded_workflow(path, file, label)
     text = file_text(file)
     return nil if text.nil?
 
-    template = File.read(File.join(@templates, MANAGED_FILES.fetch(WORKFLOW_PATH)))
+    template = File.read(File.join(@templates, MANAGED_FILES.fetch(path)))
     normalized = text.gsub("\r\n", "\n").strip
     return nil if normalized == template.strip
-    return template if PREVIOUS_WORKFLOW_DIGESTS.include?(Digest::SHA256.hexdigest(normalized))
+    return template if PREVIOUS_WORKFLOW_DIGESTS.fetch(path).include?(Digest::SHA256.hexdigest(normalized))
 
-    warn "Skipped #{label} issue assessment workflow: edited locally"
+    warn "Skipped #{label} #{File.basename(path)}: edited locally"
     nil
   end
 

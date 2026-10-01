@@ -27,5 +27,4 @@ jobs:
         with:
           mode: sweep
           project-token: ${{ secrets.TRIAGE_PROJECT_TOKEN }}
-          triage-workflow: issue-assessment.yml
           dry-run: ${{ inputs.dry_run || false }}

@@ -32,4 +32,4 @@ pull_requests:
 
 board:
   project: https://github.com/users/crmne/projects/1
-  assign_urgent_to: crmne
+  maintainer: crmne

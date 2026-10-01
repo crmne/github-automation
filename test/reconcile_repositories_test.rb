@@ -124,7 +124,7 @@ class ReconcileRepositoriesTest < Minitest::Test
     '.github/triage.yml' => "triage\n",
     '.github/FUNDING.yml' => "github: crmne\n",
     '.github/workflows/issue-assessment.yml' => File.read(File.join(TEMPLATES, 'issue-assessment.yml')),
-    '.github/workflows/board.yml' => "board\n"
+    '.github/workflows/board.yml' => File.read(File.join(TEMPLATES, 'board.yml'))
   }.freeze
   REPO = { 'full_name' => 'crmne/project', 'default_branch' => 'main' }.freeze
 
@@ -298,20 +298,30 @@ class ReconcileRepositoriesTest < Minitest::Test
   end
 
   def test_fixtures_cover_every_previous_workflow_digest
-    digests = %w[v1 v2 v3].map { |version| Digest::SHA256.hexdigest(previous_workflow(version).strip) }
+    digests = %w[v1 v2 v3 v4].map { |version| Digest::SHA256.hexdigest(previous_workflow(version).strip) }
+    board = Digest::SHA256.hexdigest(File.read(File.expand_path('fixtures/board-v1.yml', __dir__)).strip)
 
-    assert_equal ReconcileRepositories::PREVIOUS_WORKFLOW_DIGESTS, digests
+    assert_equal ReconcileRepositories::PREVIOUS_WORKFLOW_DIGESTS.fetch('.github/workflows/issue-assessment.yml'), digests
+    assert_equal [board], ReconcileRepositories::PREVIOUS_WORKFLOW_DIGESTS.fetch('.github/workflows/board.yml')
     refute_includes digests, Digest::SHA256.hexdigest(workflow_template.strip)
   end
 
+  def test_upgrades_an_unedited_board_workflow
+    api, = reconcile_current({ '.github/workflows/board.yml' => File.read(File.expand_path('fixtures/board-v1.yml', __dir__)) })
+
+    assert_equal [File.read(File.join(TEMPLATES, 'board.yml'))], api.blobs
+    assert_includes api.blobs.first, 'triage-workflow: issue-assessment.yml'
+  end
+
   def test_upgrades_every_unedited_workflow_to_triage_pull_requests_and_the_board
-    %w[v1 v2 v3].each do |version|
+    %w[v1 v2 v3 v4].each do |version|
       api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => previous_workflow(version) })
 
       assert_equal [workflow_template], api.blobs, version
       assert_equal ['.github/workflows/issue-assessment.yml'], api.trees.first.fetch(:tree).map { |entry| entry[:path] }
     end
     assert_includes workflow_template, 'pull_request_target:'
+    assert_includes workflow_template, 'pull_request_review:'
     assert_includes workflow_template, 'secrets.TRIAGE_PROJECT_TOKEN'
     assert_includes workflow_template, "vars.COPILOT_ISSUE_ASSESSMENT_ENABLED == 'true'"
   end
@@ -329,7 +339,7 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_equal 0, @changes
     assert_empty api.writes
     assert_empty output
-    assert_equal "Skipped crmne/project issue assessment workflow: edited locally\n", error
+    assert_equal "Skipped crmne/project issue-assessment.yml: edited locally\n", error
   end
 
   def sections
@@ -371,7 +381,7 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_equal ['.github/triage.yml', '.github/workflows/issue-assessment.yml', '.github/workflows/board.yml'], paths
     policy = YAML.safe_load(File.read(File.join(TEMPLATES, 'triage.yml')))
     assert_equal 'copilot', policy.dig('pull_requests', 'reviews')
-    assert_equal 'crmne', policy.dig('board', 'assign_urgent_to')
+    assert_equal 'crmne', policy.dig('board', 'maintainer')
     assert_includes File.read(File.join(TEMPLATES, 'board.yml')), 'mode: sweep'
   end
 
