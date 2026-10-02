@@ -166,6 +166,11 @@ is missing or unedited account text changes:
   account's pull request section becomes `close`, and the instruction to leave
   duplicate detection and closure to the maintainer is dropped.
 
+Repositories also get a `.coderabbit.yaml` when they have none: CodeRabbit's
+chill profile, with `request_changes_workflow` so a clean pull request gets an
+approval and one with findings gets "changes requested". Both are review
+events that run triage, so the board knows when CodeRabbit found nothing.
+
 The sweep needs `pull-requests: write` to request the maintainer's review and
 `actions: write` to send fork pull requests to triage; `board.yml` grants both.
 

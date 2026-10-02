@@ -124,7 +124,8 @@ class ReconcileRepositoriesTest < Minitest::Test
     '.github/triage.yml' => "triage\n",
     '.github/FUNDING.yml' => "github: crmne\n",
     '.github/workflows/issue-assessment.yml' => File.read(File.join(TEMPLATES, 'issue-assessment.yml')),
-    '.github/workflows/board.yml' => File.read(File.join(TEMPLATES, 'board.yml'))
+    '.github/workflows/board.yml' => File.read(File.join(TEMPLATES, 'board.yml')),
+    '.coderabbit.yaml' => File.read(File.join(TEMPLATES, 'coderabbit.yaml'))
   }.freeze
   REPO = { 'full_name' => 'crmne/project', 'default_branch' => 'main' }.freeze
 
@@ -419,6 +420,21 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_equal 'copilot', policy.dig('pull_requests', 'reviews')
     assert_equal 'crmne', policy.dig('board', 'maintainer')
     assert_includes File.read(File.join(TEMPLATES, 'board.yml')), 'mode: sweep'
+  end
+
+  def test_adds_a_coderabbit_configuration_that_approves_clean_pull_requests
+    api, = reconcile_current({ '.coderabbit.yaml' => nil })
+
+    assert_equal ['.coderabbit.yaml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
+    config = YAML.safe_load(api.blobs.first)
+    assert_equal({ 'profile' => 'chill', 'request_changes_workflow' => true }, config.fetch('reviews'))
+  end
+
+  def test_keeps_an_existing_coderabbit_configuration
+    api, = reconcile_current({ '.coderabbit.yaml' => "reviews:\n  profile: assertive\n" })
+
+    assert_equal 0, @changes
+    assert_empty api.writes
   end
 
   def test_dry_run_reports_release_notes_without_writing

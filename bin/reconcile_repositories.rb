@@ -10,7 +10,8 @@ class ReconcileRepositories
     '.github/triage.yml' => 'triage.yml',
     '.github/FUNDING.yml' => 'FUNDING.yml',
     '.github/workflows/issue-assessment.yml' => 'issue-assessment.yml',
-    '.github/workflows/board.yml' => 'board.yml'
+    '.github/workflows/board.yml' => 'board.yml',
+    '.coderabbit.yaml' => 'coderabbit.yaml'
   }.freeze
   # SHA-256 digests of every earlier version of each Copilot Triage workflow,
   # stripped and with LF line endings. A workflow matching one of these was
