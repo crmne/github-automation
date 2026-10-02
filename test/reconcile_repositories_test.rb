@@ -299,18 +299,26 @@ class ReconcileRepositoriesTest < Minitest::Test
 
   def test_fixtures_cover_every_previous_workflow_digest
     digests = %w[v1 v2 v3 v4].map { |version| Digest::SHA256.hexdigest(previous_workflow(version).strip) }
-    board = Digest::SHA256.hexdigest(File.read(File.expand_path('fixtures/board-v1.yml', __dir__)).strip)
+    boards = %w[v1 v2].map do |version|
+      Digest::SHA256.hexdigest(File.read(File.expand_path("fixtures/board-#{version}.yml", __dir__)).strip)
+    end
 
     assert_equal ReconcileRepositories::PREVIOUS_WORKFLOW_DIGESTS.fetch('.github/workflows/issue-assessment.yml'), digests
-    assert_equal [board], ReconcileRepositories::PREVIOUS_WORKFLOW_DIGESTS.fetch('.github/workflows/board.yml')
+    assert_equal boards, ReconcileRepositories::PREVIOUS_WORKFLOW_DIGESTS.fetch('.github/workflows/board.yml')
+    refute_includes boards, Digest::SHA256.hexdigest(File.read(File.join(TEMPLATES, 'board.yml')).strip)
     refute_includes digests, Digest::SHA256.hexdigest(workflow_template.strip)
   end
 
   def test_upgrades_an_unedited_board_workflow
-    api, = reconcile_current({ '.github/workflows/board.yml' => File.read(File.expand_path('fixtures/board-v1.yml', __dir__)) })
+    %w[v1 v2].each do |version|
+      api, = reconcile_current({ '.github/workflows/board.yml' => File.read(File.expand_path("fixtures/board-#{version}.yml", __dir__)) })
 
-    assert_equal [File.read(File.join(TEMPLATES, 'board.yml'))], api.blobs
-    assert_includes api.blobs.first, 'triage-workflow: issue-assessment.yml'
+      assert_equal [File.read(File.join(TEMPLATES, 'board.yml'))], api.blobs, version
+    end
+    board = File.read(File.join(TEMPLATES, 'board.yml'))
+    assert_includes board, 'triage-workflow: issue-assessment.yml'
+    assert_includes board, 'pull-requests: write'
+    assert_includes board, 'actions: write'
   end
 
   def test_upgrades_every_unedited_workflow_to_triage_pull_requests_and_the_board
@@ -350,20 +358,48 @@ class ReconcileRepositoriesTest < Minitest::Test
     policy = "labels:\n  bug: A problem.\ninstructions: |\n  Be brief.\n"
     api, = reconcile_current({ '.github/triage.yml' => policy })
 
-    assert_equal ["#{policy}\n#{sections}"], api.blobs
+    assert_equal ["duplicates: close\nclosing: auto\n#{policy}\n#{sections}"], api.blobs
     merged = YAML.safe_load(api.blobs.first)
     assert_equal 'https://github.com/users/crmne/projects/1', merged.dig('board', 'project')
     assert_equal "Be brief.\n", merged.fetch('instructions')
   end
 
-  def test_leaves_a_policy_that_configures_either_section
-    ["labels: {}\nboard:\n  project: https://github.com/orgs/acme/projects/2\n",
-     "labels: {}\npull_requests:\n  reviews: off\n"].each do |policy|
+  def test_leaves_a_policy_that_configures_either_section_and_the_account_keys
+    ["duplicates: suggest\nclosing: suggest\nlabels: {}\nboard:\n  project: https://github.com/orgs/acme/projects/2\n",
+     "duplicates: 'off'\nclosing: suggest\nlabels: {}\npull_requests:\n  reviews: off\n  out_of_scope: suggest\n"].each do |policy|
       api, = reconcile_current({ '.github/triage.yml' => policy })
 
       assert_equal 0, @changes, policy
       assert_empty api.writes, policy
     end
+  end
+
+  def test_brings_an_earlier_account_policy_to_closing_and_agents_md
+    policy = <<~YAML
+      followups: selective
+      sources:
+        - README.md
+        - docs/**/*
+      instructions: |
+        Ask for one fact. Leave uncertain diagnoses, product decisions,
+        duplicate detection, and closure to a maintainer. Be brief.
+      pull_requests:
+        reviews: copilot
+        out_of_scope: suggest
+
+      board:
+        project: https://github.com/users/crmne/projects/1
+    YAML
+    api, = reconcile_current({ '.github/triage.yml' => policy })
+
+    merged = YAML.safe_load(api.blobs.first)
+    assert_equal 'close', merged.fetch('duplicates')
+    assert_equal 'auto', merged.fetch('closing')
+    assert_equal ['README.md', 'docs/**/*', 'AGENTS.md'], merged.fetch('sources')
+    assert_equal 'close', merged.dig('pull_requests', 'out_of_scope')
+    assert_equal "Ask for one fact. Leave uncertain diagnoses and product decisions to the maintainer. Be brief.\n",
+                 merged.fetch('instructions')
+    assert_equal 'https://github.com/users/crmne/projects/1', merged.dig('board', 'project')
   end
 
   def test_reports_an_invalid_policy_instead_of_appending

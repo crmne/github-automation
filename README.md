@@ -118,9 +118,8 @@ commit. For repositories that are not forks, it:
   missing;
 - appends release-notes guidance to an existing `AGENTS.md` that has none, or
   updates an unedited earlier copy of it, in that same pull request;
-- upgrades an unedited earlier `issue-assessment.yml` to the current Copilot
-  Triage workflow, and appends the account's board and pull request sections to
-  a triage policy that configures neither, in that same pull request; and
+- upgrades unedited earlier Copilot Triage workflows and brings each triage
+  policy to the account's settings, in that same pull request; and
 - removes `.github/dependabot.yml` in that same pull request so version-update
   pull requests stay disabled.
 
@@ -153,9 +152,22 @@ An `issue-assessment.yml` or `board.yml` matching one of its
 with the current template; one edited by hand is reported and left alone. The
 current triage workflow also runs when Copilot posts a review, and the board
 sweep sends forks' pull requests back to it. Add the outgoing digest whenever the
-template changes. Existing triage policies are project-specific, so only the
-`pull_requests` and `board` sections are appended, and only to a policy that
-configures neither.
+template changes. Existing triage policies are project-specific, so only what
+is missing or unedited account text changes:
+
+- the `pull_requests` and `board` sections are appended to a policy that
+  configures neither;
+- `duplicates: close` and `closing: auto` are added unless the policy sets its
+  own, so triage closes duplicates, issues a release fixed, issues the reporter
+  resolved, and out-of-scope requests, each with an explanation;
+- `AGENTS.md` joins the policy's `sources`, so pull request triage reads the
+  contribution rules; and
+- unedited earlier account text is replaced: `out_of_scope: suggest` in the
+  account's pull request section becomes `close`, and the instruction to leave
+  duplicate detection and closure to the maintainer is dropped.
+
+The sweep needs `pull-requests: write` to request the maintainer's review and
+`actions: write` to send fork pull requests to triage; `board.yml` grants both.
 
 The release-notes guidance (`templates/release-notes-guidance.md`) follows
 Spotifast's style: read the previous two stable releases (or the most recent

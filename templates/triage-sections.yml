@@ -1,7 +1,7 @@
 # github-automation: the account's board and pull request triage
 pull_requests:
   reviews: copilot
-  out_of_scope: suggest
+  out_of_scope: close
 
 board:
   project: https://github.com/users/crmne/projects/1

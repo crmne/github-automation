@@ -25,9 +25,19 @@ class ReconcileRepositories
     ],
     '.github/workflows/board.yml' => %w[
       f22f01965279b998b8bff2e1561aafb10bb8a1cddd69fbbc066f06a624ecd303
+      0b10d8b3ed1a13f7b62b4afe6368fad711c8561773a6187be4faa79d777587aa
     ]
   }.freeze
   TRIAGE_SECTIONS_TEMPLATE = 'triage-sections.yml'
+  # Top-level triage settings every policy gets unless it sets its own.
+  TRIAGE_ACCOUNT_KEYS = { 'duplicates' => 'close', 'closing' => 'auto' }.freeze
+  # Earlier account policy text, replaced when a policy still has it unedited.
+  PREVIOUS_POLICY_TEXT = {
+    "pull_requests:\n  reviews: copilot\n  out_of_scope: suggest\n" =>
+      "pull_requests:\n  reviews: copilot\n  out_of_scope: close\n",
+    /Leave\s+uncertain\s+diagnoses,\s+(product|policy)\s+decisions,\s+(?:duplicate\s+detection,\s+)?and\s+
+     closure\s+to\s+(?:the|a)\s+maintainer\./x => 'Leave uncertain diagnoses and \1 decisions to the maintainer.'
+  }.freeze
   # Forks that are the owner's own projects rather than a way to contribute
   # upstream. They get the full policy, like any owned repository.
   OWNED_FORKS = %w[ArduinoTec-Pedals].freeze
@@ -143,7 +153,7 @@ class ReconcileRepositories
       upgraded = files[path] && upgraded_workflow(path, files[path], label)
       [path, upgraded] if upgraded
     end
-    policy = files['.github/triage.yml'] && triage_with_sections(files['.github/triage.yml'], label)
+    policy = files['.github/triage.yml'] && triage_policy(files['.github/triage.yml'], label)
     dependabot = content(name, '.github/dependabot.yml', sha)
     return 0 if missing.empty? && !agents && workflows.empty? && !policy && !dependabot
 
@@ -234,21 +244,32 @@ class ReconcileRepositories
     nil
   end
 
-  # Returns the triage policy with the account's board and pull request
-  # sections appended when it has neither, or nil. Policies are project
-  # specific, so nothing already in them changes, and a policy that already
-  # configures one of the sections is left to its maintainer.
-  def triage_with_sections(file, label)
-    text = file_text(file)
-    return nil if text.nil?
+  # Returns the triage policy brought to the account's settings, or nil when
+  # nothing changes. Policies are project specific, so only what is missing
+  # or unedited earlier account text changes: earlier account text is
+  # replaced, the board and pull request sections are appended to a policy with
+  # neither, missing account keys are added, and AGENTS.md joins the sources.
+  def triage_policy(file, label)
+    original = file_text(file)
+    return nil if original.nil?
 
-    policy = YAML.safe_load(text)
+    policy = YAML.safe_load(original)
     return nil unless policy.is_a?(Hash)
-    return nil if policy.key?('pull_requests') || policy.key?('board')
 
-    newline = text.include?("\r\n") ? "\r\n" : "\n"
-    sections = File.read(File.join(@templates, TRIAGE_SECTIONS_TEMPLATE)).gsub("\n", newline)
-    "#{text.rstrip}#{newline}#{newline}#{sections}"
+    newline = original.include?("\r\n") ? "\r\n" : "\n"
+    text = original.gsub("\r\n", "\n")
+    PREVIOUS_POLICY_TEXT.each { |previous, current| text = text.sub(previous, current) }
+    unless policy.key?('pull_requests') || policy.key?('board')
+      text = "#{text.rstrip}\n\n#{File.read(File.join(@templates, TRIAGE_SECTIONS_TEMPLATE))}"
+    end
+    missing = TRIAGE_ACCOUNT_KEYS.reject { |key, _| policy.key?(key) }
+    text = missing.map { |key, value| "#{key}: #{value}\n" }.join + text
+    sources = policy['sources']
+    if sources.is_a?(Array) && !sources.include?('AGENTS.md')
+      text = text.sub(/^sources:\n((?:( +)- .*\n)+)/) { "sources:\n#{Regexp.last_match(1)}#{Regexp.last_match(2)}- AGENTS.md\n" }
+    end
+    text = text.gsub("\n", newline)
+    text == original ? nil : text
   rescue Psych::Exception
     warn "Skipped #{label} triage policy sections: not valid YAML"
     nil
