@@ -47,7 +47,6 @@ jobs:
       - uses: crmne/copilot-triage@v0
         with:
           copilot-token: ${{ secrets.COPILOT_GITHUB_TOKEN }}
-          fallback-api-key: ${{ secrets.OPENROUTER_API_KEY }}
           project-token: ${{ secrets.TRIAGE_PROJECT_TOKEN }}
           kind: ${{ inputs.kind || (github.event.discussion && 'discussion' || (github.event.pull_request || github.event.issue.pull_request) && 'pull_request' || 'issue') }}
           number: ${{ inputs.number || github.event.issue.number || github.event.discussion.number || github.event.pull_request.number }}

@@ -25,6 +25,7 @@ class ReconcileRepositories
       ce3f2d3a94edc81213f2da3ff8ecfb5701caac97fc3e80a4546f37e12ff5dc0c
       87f060476c464e99373c96fd1355ca96a2951142036da88ef930951c5cad095c
       d0ad910f49be75e69c433c16653378a13235ee12a20b4b26053681bbc6d7068f
+      57d77caa81c044b37d4bffa78011642c8407c435411403b174689bd835bb98e1
     ],
     '.github/workflows/board.yml' => %w[
       f22f01965279b998b8bff2e1561aafb10bb8a1cddd69fbbc066f06a624ecd303
@@ -156,7 +157,7 @@ class ReconcileRepositories
       upgraded = files[path] && upgraded_workflow(path, files[path], label)
       [path, upgraded] if upgraded
     end
-    policy = files['.github/triage.yml'] && triage_policy(files['.github/triage.yml'], label)
+    policy = files['.github/triage.yml'] && triage_policy(files['.github/triage.yml'], label, public: !repo['private'])
     dependabot = content(name, '.github/dependabot.yml', sha)
     return 0 if missing.empty? && !agents && workflows.empty? && !policy && !dependabot
 
@@ -171,7 +172,11 @@ class ReconcileRepositories
     return 0 unless existing.empty?
 
     base_tree = @api.get("repos/#{name}/git/commits/#{sha}").dig('tree', 'sha')
-    entries = missing.map { |path, template| blob_entry(name, path, File.read(File.join(@templates, template))) }
+    entries = missing.map do |path, template|
+      text = File.read(File.join(@templates, template))
+      text = public_reviews(text) if path == '.github/triage.yml' && !repo['private']
+      blob_entry(name, path, text)
+    end
     entries << blob_entry(name, 'AGENTS.md', agents) if agents
     workflows.each { |path, text| entries << blob_entry(name, path, text) }
     entries << blob_entry(name, '.github/triage.yml', policy) if policy
@@ -252,7 +257,15 @@ class ReconcileRepositories
   # or unedited earlier account text changes: earlier account text is
   # replaced, the board and pull request sections are appended to a policy with
   # neither, missing account keys are added, and AGENTS.md joins the sources.
-  def triage_policy(file, label)
+  # Public repositories get CodeRabbit's free reviews, so Copilot's, billed to
+  # the owner, are turned off there; private ones keep them.
+  ACCOUNT_REVIEWS = "pull_requests:\n  reviews: copilot\n"
+
+  def public_reviews(text)
+    text.sub(/^#{Regexp.escape(ACCOUNT_REVIEWS)}/, "pull_requests:\n  reviews: 'off'\n")
+  end
+
+  def triage_policy(file, label, public: false)
     original = file_text(file)
     return nil if original.nil?
 
@@ -265,6 +278,7 @@ class ReconcileRepositories
     unless policy.key?('pull_requests') || policy.key?('board')
       text = "#{text.rstrip}\n\n#{File.read(File.join(@templates, TRIAGE_SECTIONS_TEMPLATE))}"
     end
+    text = public_reviews(text) if public
     missing = TRIAGE_ACCOUNT_KEYS.reject { |key, _| policy.key?(key) }
     text = missing.map { |key, value| "#{key}: #{value}\n" }.join + text
     sources = policy['sources']

@@ -144,6 +144,9 @@ with that variable and its secrets:
 
 - `COPILOT_GITHUB_TOKEN`: the owner's fine-grained token with Copilot Requests
   and, to request reviews, Pull requests: Read and write.
+- `OPENROUTER_API_KEY`: an OpenRouter key for the fallback model, used only
+  once the Copilot allowance is spent; those runs update the board and post
+  nothing.
 - `TRIAGE_PROJECT_TOKEN`: a classic token with the `project` and `repo` scopes,
   for the board. Without it, triage and the sweep skip the board quietly.
 

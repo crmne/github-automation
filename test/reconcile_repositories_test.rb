@@ -299,7 +299,7 @@ class ReconcileRepositoriesTest < Minitest::Test
   end
 
   def test_fixtures_cover_every_previous_workflow_digest
-    digests = %w[v1 v2 v3 v4 v5 v6].map { |version| Digest::SHA256.hexdigest(previous_workflow(version).strip) }
+    digests = %w[v1 v2 v3 v4 v5 v6 v7].map { |version| Digest::SHA256.hexdigest(previous_workflow(version).strip) }
     boards = %w[v1 v2].map do |version|
       Digest::SHA256.hexdigest(File.read(File.expand_path("fixtures/board-#{version}.yml", __dir__)).strip)
     end
@@ -323,7 +323,7 @@ class ReconcileRepositoriesTest < Minitest::Test
   end
 
   def test_upgrades_every_unedited_workflow_to_triage_pull_requests_and_the_board
-    %w[v1 v2 v3 v4 v5 v6].each do |version|
+    %w[v1 v2 v3 v4 v5 v6 v7].each do |version|
       api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => previous_workflow(version) })
 
       assert_equal [workflow_template], api.blobs, version
@@ -334,6 +334,7 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_includes workflow_template, 'types: [opened, reopened, closed]'
     assert_includes workflow_template, 'synchronize, closed]'
     assert_includes workflow_template, 'secrets.TRIAGE_PROJECT_TOKEN'
+    assert_includes workflow_template, 'fallback-api-key: ${{ secrets.OPENROUTER_API_KEY }}'
     assert_includes workflow_template, "vars.COPILOT_ISSUE_ASSESSMENT_ENABLED == 'true'"
   end
 
@@ -361,7 +362,8 @@ class ReconcileRepositoriesTest < Minitest::Test
     policy = "labels:\n  bug: A problem.\ninstructions: |\n  Be brief.\n"
     api, = reconcile_current({ '.github/triage.yml' => policy })
 
-    assert_equal ["duplicates: close\nclosing: auto\n#{policy}\n#{sections}"], api.blobs
+    assert_equal ["duplicates: close\nclosing: auto\n#{policy}\n#{sections.sub('reviews: copilot', "reviews: 'off'")}"],
+                 api.blobs
     merged = YAML.safe_load(api.blobs.first)
     assert_equal 'https://github.com/users/crmne/projects/1', merged.dig('board', 'project')
     assert_equal "Be brief.\n", merged.fetch('instructions')
@@ -434,6 +436,26 @@ class ReconcileRepositoriesTest < Minitest::Test
 
   def test_keeps_an_existing_coderabbit_configuration
     api, = reconcile_current({ '.coderabbit.yaml' => "reviews:\n  profile: assertive\n" })
+
+    assert_equal 0, @changes
+    assert_empty api.writes
+  end
+
+  def test_turns_copilot_reviews_off_in_public_repositories_only
+    policy = "labels: {}\npull_requests:\n  reviews: copilot\n  out_of_scope: close\n"
+    api, = reconcile_current({ '.github/triage.yml' => policy })
+    assert_equal 'off', YAML.safe_load(api.blobs.first).dig('pull_requests', 'reviews')
+
+    api = FilesAPI.new(COMPLETE.merge('AGENTS.md' => File.read(File.join(TEMPLATES, 'AGENTS.md')),
+                                      '.github/triage.yml' => policy))
+    reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: false)
+    capture_io { reconciler.send(:reconcile_files, REPO.merge('private' => true)) }
+    assert_empty api.blobs.select { |blob| blob.include?("reviews: 'off'") }
+  end
+
+  def test_keeps_a_review_setting_a_maintainer_chose
+    policy = "duplicates: close\nclosing: auto\nlabels: {}\npull_requests:\n  out_of_scope: close\n  reviews: copilot\n"
+    api, = reconcile_current({ '.github/triage.yml' => policy })
 
     assert_equal 0, @changes
     assert_empty api.writes
