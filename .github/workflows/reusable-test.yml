@@ -1,0 +1,16 @@
+name: Reusable test
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+  discussions: write
+  pull-requests: write
+jobs:
+  triage:
+    uses: crmne/copilot-triage/.github/workflows/assess.yml@main
+    secrets: inherit
+    with:
+      kind: pull_request
+      number: '10'
+      dry_run: true
