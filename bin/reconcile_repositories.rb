@@ -26,15 +26,14 @@ class ReconcileRepositories
       87f060476c464e99373c96fd1355ca96a2951142036da88ef930951c5cad095c
       d0ad910f49be75e69c433c16653378a13235ee12a20b4b26053681bbc6d7068f
       57d77caa81c044b37d4bffa78011642c8407c435411403b174689bd835bb98e1
+      2d3771e54e82502ef19a130ae8bab05df5bbc1f01b4fef9830671feaa20b02ca
     ],
     '.github/workflows/board.yml' => %w[
       f22f01965279b998b8bff2e1561aafb10bb8a1cddd69fbbc066f06a624ecd303
       0b10d8b3ed1a13f7b62b4afe6368fad711c8561773a6187be4faa79d777587aa
+      04aaf6ab4e3ed1585b5e3e48eb1471fcbe563706d570719d45539a60f3061dae
     ]
   }.freeze
-  TRIAGE_SECTIONS_TEMPLATE = 'triage-sections.yml'
-  # Top-level triage settings every policy gets unless it sets its own.
-  TRIAGE_ACCOUNT_KEYS = { 'duplicates' => 'close', 'closing' => 'auto' }.freeze
   # Earlier account policy text, replaced when a policy still has it unedited.
   PREVIOUS_POLICY_TEXT = {
     "pull_requests:\n  reviews: copilot\n  out_of_scope: suggest\n" =>
@@ -157,7 +156,7 @@ class ReconcileRepositories
       upgraded = files[path] && upgraded_workflow(path, files[path], label)
       [path, upgraded] if upgraded
     end
-    policy = files['.github/triage.yml'] && triage_policy(files['.github/triage.yml'], label, public: !repo['private'])
+    policy = files['.github/triage.yml'] && triage_policy(files['.github/triage.yml'], label)
     dependabot = content(name, '.github/dependabot.yml', sha)
     return 0 if missing.empty? && !agents && workflows.empty? && !policy && !dependabot
 
@@ -172,11 +171,7 @@ class ReconcileRepositories
     return 0 unless existing.empty?
 
     base_tree = @api.get("repos/#{name}/git/commits/#{sha}").dig('tree', 'sha')
-    entries = missing.map do |path, template|
-      text = File.read(File.join(@templates, template))
-      text = public_reviews(text) if path == '.github/triage.yml' && !repo['private']
-      blob_entry(name, path, text)
-    end
+    entries = missing.map { |path, template| blob_entry(name, path, File.read(File.join(@templates, template))) }
     entries << blob_entry(name, 'AGENTS.md', agents) if agents
     workflows.each { |path, text| entries << blob_entry(name, path, text) }
     entries << blob_entry(name, '.github/triage.yml', policy) if policy
@@ -257,15 +252,19 @@ class ReconcileRepositories
   # or unedited earlier account text changes: earlier account text is
   # replaced, the board and pull request sections are appended to a policy with
   # neither, missing account keys are added, and AGENTS.md joins the sources.
-  # Public repositories get CodeRabbit's free reviews, so Copilot's, billed to
-  # the owner, are turned off there; private ones keep them.
-  ACCOUNT_REVIEWS = "pull_requests:\n  reviews: copilot\n"
+  # Each policy extends the account's (triage/account.yml) and keeps only what
+  # is its own. Account settings a policy still repeats unchanged are dropped,
+  # so the next account change reaches every repository without a pull
+  # request; a setting a repository changed stays and wins.
+  ACCOUNT_POLICY = 'crmne/github-automation:triage/account.yml'
+  ACCOUNT_TEXT = [
+    /^duplicates: close\n/, /^closing: auto\n/,
+    /^pull_requests:\n  reviews: (?:copilot|'off')\n  out_of_scope: close\n\n?/,
+    %r{^board:\n  project: https://github\.com/users/crmne/projects/1\n  (?:maintainer|assign_urgent_to): crmne\n\n?},
+    /^# github-automation: the account's board and pull request triage\n/
+  ].freeze
 
-  def public_reviews(text)
-    text.sub(/^#{Regexp.escape(ACCOUNT_REVIEWS)}/, "pull_requests:\n  reviews: 'off'\n")
-  end
-
-  def triage_policy(file, label, public: false)
+  def triage_policy(file, label)
     original = file_text(file)
     return nil if original.nil?
 
@@ -275,17 +274,13 @@ class ReconcileRepositories
     newline = original.include?("\r\n") ? "\r\n" : "\n"
     text = original.gsub("\r\n", "\n")
     PREVIOUS_POLICY_TEXT.each { |previous, current| text = text.sub(previous, current) }
-    unless policy.key?('pull_requests') || policy.key?('board')
-      text = "#{text.rstrip}\n\n#{File.read(File.join(@templates, TRIAGE_SECTIONS_TEMPLATE))}"
-    end
-    text = public_reviews(text) if public
-    missing = TRIAGE_ACCOUNT_KEYS.reject { |key, _| policy.key?(key) }
-    text = missing.map { |key, value| "#{key}: #{value}\n" }.join + text
+    ACCOUNT_TEXT.each { |account| text = text.sub(account, '') }
+    text = "extends: #{ACCOUNT_POLICY}\n#{text}" unless policy.key?('extends')
     sources = policy['sources']
     if sources.is_a?(Array) && !sources.include?('AGENTS.md')
       text = text.sub(/^sources:\n((?:( +)- .*\n)+)/) { "sources:\n#{Regexp.last_match(1)}#{Regexp.last_match(2)}- AGENTS.md\n" }
     end
-    text = text.gsub("\n", newline)
+    text = "#{text.rstrip}\n".gsub("\n", newline)
     text == original ? nil : text
   rescue Psych::Exception
     warn "Skipped #{label} triage policy sections: not valid YAML"

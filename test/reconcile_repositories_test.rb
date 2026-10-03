@@ -299,8 +299,8 @@ class ReconcileRepositoriesTest < Minitest::Test
   end
 
   def test_fixtures_cover_every_previous_workflow_digest
-    digests = %w[v1 v2 v3 v4 v5 v6 v7].map { |version| Digest::SHA256.hexdigest(previous_workflow(version).strip) }
-    boards = %w[v1 v2].map do |version|
+    digests = %w[v1 v2 v3 v4 v5 v6 v7 v8].map { |version| Digest::SHA256.hexdigest(previous_workflow(version).strip) }
+    boards = %w[v1 v2 v3].map do |version|
       Digest::SHA256.hexdigest(File.read(File.expand_path("fixtures/board-#{version}.yml", __dir__)).strip)
     end
 
@@ -311,19 +311,19 @@ class ReconcileRepositoriesTest < Minitest::Test
   end
 
   def test_upgrades_an_unedited_board_workflow
-    %w[v1 v2].each do |version|
+    %w[v1 v2 v3].each do |version|
       api, = reconcile_current({ '.github/workflows/board.yml' => File.read(File.expand_path("fixtures/board-#{version}.yml", __dir__)) })
 
       assert_equal [File.read(File.join(TEMPLATES, 'board.yml'))], api.blobs, version
     end
     board = File.read(File.join(TEMPLATES, 'board.yml'))
-    assert_includes board, 'triage-workflow: issue-assessment.yml'
-    assert_includes board, 'pull-requests: write'
-    assert_includes board, 'actions: write'
+    assert_includes board, 'uses: crmne/copilot-triage/.github/workflows/sweep.yml@v0'
+    assert_includes board, 'triage_workflow: issue-assessment.yml'
+    assert_includes board, 'secrets: inherit'
   end
 
   def test_upgrades_every_unedited_workflow_to_triage_pull_requests_and_the_board
-    %w[v1 v2 v3 v4 v5 v6 v7].each do |version|
+    %w[v1 v2 v3 v4 v5 v6 v7 v8].each do |version|
       api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => previous_workflow(version) })
 
       assert_equal [workflow_template], api.blobs, version
@@ -333,9 +333,8 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_includes workflow_template, 'pull_request_review:'
     assert_includes workflow_template, 'types: [opened, reopened, closed]'
     assert_includes workflow_template, 'synchronize, closed]'
-    assert_includes workflow_template, 'secrets.TRIAGE_PROJECT_TOKEN'
-    assert_includes workflow_template, 'fallback-api-key: ${{ secrets.OPENROUTER_API_KEY }}'
-    assert_includes workflow_template, "vars.COPILOT_ISSUE_ASSESSMENT_ENABLED == 'true'"
+    assert_includes workflow_template, 'uses: crmne/copilot-triage/.github/workflows/assess.yml@v0'
+    assert_includes workflow_template, 'secrets: inherit'
   end
 
   def test_upgrades_a_workflow_saved_without_a_final_newline
@@ -354,76 +353,73 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_equal "Skipped crmne/project issue-assessment.yml: edited locally\n", error
   end
 
-  def sections
-    File.read(File.join(TEMPLATES, 'triage-sections.yml'))
+  def account_policy
+    "duplicates: close\nclosing: auto\nlabels:\n  bug: A problem.\ninstructions: |\n  Be brief.\n\n" \
+      "pull_requests:\n  reviews: copilot\n  out_of_scope: close\n\n" \
+      "board:\n  project: https://github.com/users/crmne/projects/1\n  maintainer: crmne\n"
   end
 
-  def test_appends_the_board_and_pull_request_sections_to_a_policy_without_them
-    policy = "labels:\n  bug: A problem.\ninstructions: |\n  Be brief.\n"
-    api, = reconcile_current({ '.github/triage.yml' => policy })
+  def test_moves_a_policy_onto_the_account_policy_and_drops_what_it_repeats
+    api, = reconcile_current({ '.github/triage.yml' => account_policy })
 
-    assert_equal ["duplicates: close\nclosing: auto\n#{policy}\n#{sections.sub('reviews: copilot', "reviews: 'off'")}"],
-                 api.blobs
-    merged = YAML.safe_load(api.blobs.first)
-    assert_equal 'https://github.com/users/crmne/projects/1', merged.dig('board', 'project')
-    assert_equal "Be brief.\n", merged.fetch('instructions')
+    assert_equal ["extends: crmne/github-automation:triage/account.yml\nlabels:\n  bug: A problem.\n" \
+                  "instructions: |\n  Be brief.\n"], api.blobs
   end
 
-  def test_leaves_a_policy_that_configures_either_section_and_the_account_keys
-    ["duplicates: suggest\nclosing: suggest\nlabels: {}\nboard:\n  project: https://github.com/orgs/acme/projects/2\n",
-     "duplicates: 'off'\nclosing: suggest\nlabels: {}\npull_requests:\n  reviews: off\n  out_of_scope: suggest\n"].each do |policy|
-      api, = reconcile_current({ '.github/triage.yml' => policy })
-
-      assert_equal 0, @changes, policy
-      assert_empty api.writes, policy
-    end
-  end
-
-  def test_brings_an_earlier_account_policy_to_closing_and_agents_md
-    policy = <<~YAML
-      followups: selective
-      sources:
-        - README.md
-        - docs/**/*
-      instructions: |
-        Ask for one fact. Leave uncertain diagnoses, product decisions,
-        duplicate detection, and closure to a maintainer. Be brief.
-      pull_requests:
-        reviews: copilot
-        out_of_scope: suggest
-
-      board:
-        project: https://github.com/users/crmne/projects/1
-    YAML
+  def test_keeps_settings_a_repository_changed
+    policy = "closing: suggest\nlabels: {}\npull_requests:\n  review_min_lines: 50\n  out_of_scope: suggest\n" \
+             "board:\n  project: https://github.com/orgs/acme/projects/2\n"
     api, = reconcile_current({ '.github/triage.yml' => policy })
 
     merged = YAML.safe_load(api.blobs.first)
-    assert_equal 'close', merged.fetch('duplicates')
-    assert_equal 'auto', merged.fetch('closing')
-    assert_equal ['README.md', 'docs/**/*', 'AGENTS.md'], merged.fetch('sources')
-    assert_equal 'close', merged.dig('pull_requests', 'out_of_scope')
-    assert_equal "Ask for one fact. Leave uncertain diagnoses and product decisions to the maintainer. Be brief.\n",
-                 merged.fetch('instructions')
-    assert_equal 'https://github.com/users/crmne/projects/1', merged.dig('board', 'project')
+    assert_equal 'crmne/github-automation:triage/account.yml', merged.fetch('extends')
+    assert_equal 'suggest', merged.fetch('closing')
+    assert_equal 'suggest', merged.dig('pull_requests', 'out_of_scope')
+    assert_equal 'https://github.com/orgs/acme/projects/2', merged.dig('board', 'project')
   end
 
-  def test_reports_an_invalid_policy_instead_of_appending
+  def test_leaves_a_policy_already_on_the_account_policy
+    policy = "extends: crmne/github-automation:triage/account.yml\nlabels: {}\n"
+    api, = reconcile_current({ '.github/triage.yml' => policy })
+
+    assert_equal 0, @changes
+    assert_empty api.writes
+  end
+
+  def test_still_drops_the_instruction_to_leave_closure_to_the_maintainer
+    policy = "extends: crmne/github-automation:triage/account.yml\ninstructions: |\n  Ask for one fact. Leave " \
+             "uncertain diagnoses, product decisions,\n  duplicate detection, and closure to a maintainer.\n"
+    api, = reconcile_current({ '.github/triage.yml' => policy })
+
+    assert_equal "Ask for one fact. Leave uncertain diagnoses and product decisions to the maintainer.\n",
+                 YAML.safe_load(api.blobs.first).fetch('instructions')
+  end
+
+  def test_account_policy_holds_the_account_settings
+    account = YAML.safe_load_file(File.expand_path('../triage/account.yml', __dir__))
+
+    assert_equal 'close', account.fetch('duplicates')
+    assert_equal 'auto', account.fetch('closing')
+    assert_equal 'private', account.dig('pull_requests', 'reviews')
+    assert_equal 'crmne', account.dig('board', 'maintainer')
+  end
+
+  def test_reports_an_invalid_policy_instead_of_changing_it
     _api, _output, error = reconcile_current({ '.github/triage.yml' => "labels: [unclosed\n" })
 
     assert_equal 0, @changes
-    assert_includes error, 'triage policy sections: not valid YAML'
+    assert_includes error, 'not valid YAML'
   end
 
-  def test_new_repositories_get_the_workflows_and_a_policy_with_both_sections
+  def test_new_repositories_get_the_workflows_and_a_policy_on_the_account_policy
     api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => nil, '.github/workflows/board.yml' => nil,
                              '.github/triage.yml' => nil })
 
     paths = api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
     assert_equal ['.github/triage.yml', '.github/workflows/issue-assessment.yml', '.github/workflows/board.yml'], paths
     policy = YAML.safe_load(File.read(File.join(TEMPLATES, 'triage.yml')))
-    assert_equal 'copilot', policy.dig('pull_requests', 'reviews')
-    assert_equal 'crmne', policy.dig('board', 'maintainer')
-    assert_includes File.read(File.join(TEMPLATES, 'board.yml')), 'mode: sweep'
+    assert_equal 'crmne/github-automation:triage/account.yml', policy.fetch('extends')
+    refute policy.key?('board')
   end
 
   def test_adds_a_coderabbit_configuration_that_approves_clean_pull_requests
@@ -441,25 +437,7 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_empty api.writes
   end
 
-  def test_turns_copilot_reviews_off_in_public_repositories_only
-    policy = "labels: {}\npull_requests:\n  reviews: copilot\n  out_of_scope: close\n"
-    api, = reconcile_current({ '.github/triage.yml' => policy })
-    assert_equal 'off', YAML.safe_load(api.blobs.first).dig('pull_requests', 'reviews')
 
-    api = FilesAPI.new(COMPLETE.merge('AGENTS.md' => File.read(File.join(TEMPLATES, 'AGENTS.md')),
-                                      '.github/triage.yml' => policy))
-    reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: false)
-    capture_io { reconciler.send(:reconcile_files, REPO.merge('private' => true)) }
-    assert_empty api.blobs.select { |blob| blob.include?("reviews: 'off'") }
-  end
-
-  def test_keeps_a_review_setting_a_maintainer_chose
-    policy = "duplicates: close\nclosing: auto\nlabels: {}\npull_requests:\n  out_of_scope: close\n  reviews: copilot\n"
-    api, = reconcile_current({ '.github/triage.yml' => policy })
-
-    assert_equal 0, @changes
-    assert_empty api.writes
-  end
 
   def test_dry_run_reports_release_notes_without_writing
     api, output = reconcile_files({ 'AGENTS.md' => "# Project\n", '.github/triage.yml' => nil }, dry_run: true)

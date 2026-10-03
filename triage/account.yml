@@ -1,0 +1,13 @@
+# Account-wide Copilot Triage settings. Each repository's .github/triage.yml
+# extends this file and keeps only what is its own: labels, sources, replies,
+# documentation links, and instructions. A key set there wins over this one.
+duplicates: close
+closing: auto
+
+pull_requests:
+  reviews: private # Copilot reviews private repositories; CodeRabbit reviews public ones
+  out_of_scope: close
+
+board:
+  project: https://github.com/users/crmne/projects/1
+  maintainer: crmne
