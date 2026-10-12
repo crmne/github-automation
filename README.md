@@ -5,8 +5,9 @@ Small account maintenance workflows for Carmine Paolino's repositories.
 ## Copilot review fallback
 
 GitHub's automatic PR reviews use the PR author's Copilot access and credits.
-This workflow checks every 15 minutes for open PRs that still lack a Copilot
-review, then requests at most one review as the repository owner.
+This workflow checks every 15 minutes for open PRs in private repositories that
+still lack a Copilot review, then requests at most one review as the repository
+owner. Public repositories get CodeRabbit's free reviews instead.
 
 It waits until the PR has been quiet for 15 minutes and skips drafts, archived
 repositories, forks, reviews of the current head commit, and pending Copilot

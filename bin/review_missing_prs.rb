@@ -85,7 +85,8 @@ class ReviewMissingPRs
       next unless name.start_with?("#{@owner}/")
 
       repo = repositories[name] ||= @api.get("repos/#{name}")
-      next if repo['archived'] || repo['fork']
+      # Public repositories get CodeRabbit's free reviews; Copilot's are billed.
+      next if repo['archived'] || repo['fork'] || !repo['private']
 
       path = "repos/#{name}/pulls/#{Integer(issue.fetch('number'))}"
       next unless eligible?(path)

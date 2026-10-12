@@ -31,7 +31,7 @@ class ReviewMissingPRsTest < Minitest::Test
       'user' => { 'login' => 'crmne' },
       'copilot_internal/user' => { 'quota_snapshots' => { 'premium_interactions' => @quota } },
       'search' => [{ 'repository_url' => 'https://api.github.com/repos/crmne/example', 'number' => 1 }],
-      'repos/crmne/example' => { 'archived' => false, 'fork' => false },
+      'repos/crmne/example' => { 'archived' => false, 'fork' => false, 'private' => true },
       @path => { 'state' => 'open', 'draft' => false, 'updated_at' => '2026-09-15T09:00:00Z', 'requested_reviewers' => [] },
       "#{@path}/reviews" => [],
       @timeline => []
@@ -101,6 +101,12 @@ class ReviewMissingPRsTest < Minitest::Test
       assert_empty @api.posts
       @api.responses['repos/crmne/example'][key] = false
     end
+  end
+
+  def test_public_repositories_are_skipped
+    @api.responses['repos/crmne/example']['private'] = false
+    run_fallback
+    assert_empty @api.posts
   end
 
   def test_existing_reviews_and_pending_requests_are_skipped
