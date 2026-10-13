@@ -59,6 +59,59 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_equal %w[crmne/public crmne/private crmne/fork], reconciler.names
   end
 
+  class OrganizationAPI
+    attr_reader :reads
+
+    def initialize(login: 'crmne')
+      @login = login
+      @reads = []
+    end
+
+    def get(path)
+      @reads << path
+      return { 'login' => @login } if path == 'user'
+
+      { 'full_name' => path.delete_prefix('repos/'), 'archived' => false }
+    end
+  end
+
+  def test_organization_repositories_use_their_organization_token
+    api = OrganizationAPI.new
+    reconciler = RecordingReconciler.new(ScopeAPI.new, owner: 'crmne', templates: '.', dry_run: true,
+                                                       organization_apis: { 'berlinrb' => api })
+
+    output, = capture_io { reconciler.run }
+
+    assert_equal %w[crmne/public crmne/private crmne/fork], reconciler.names
+    assert_includes api.reads, 'repos/berlinrb/berlinrb.org'
+    assert_includes output, 'across 4 repositories'
+  end
+
+  def test_organization_repositories_are_skipped_without_a_token
+    reconciler = RecordingReconciler.new(ScopeAPI.new, owner: 'crmne', templates: '.', dry_run: true)
+
+    output, error = capture_io { reconciler.run }
+
+    assert_includes error, 'Skipped berlinrb repositories: no BERLINRB_POLICY_TOKEN'
+    assert_includes output, 'across 3 repositories'
+  end
+
+  def test_organization_tokens_must_belong_to_the_owner
+    api = OrganizationAPI.new(login: 'someone')
+    reconciler = RecordingReconciler.new(ScopeAPI.new, owner: 'crmne', templates: '.', dry_run: true,
+                                                       organization_apis: { 'berlinrb' => api })
+
+    _output, error = capture_io { reconciler.run }
+
+    assert_equal ['user'], api.reads
+    assert_includes error, 'Skipped berlinrb repositories: Token must belong to the repository owner'
+  end
+
+  def test_organization_apis_come_from_each_organization_token
+    assert_empty ReconcileRepositories.organization_apis({})
+    assert_equal ['berlinrb'], ReconcileRepositories.organization_apis({ 'BERLINRB_POLICY_TOKEN' => 'token' }).keys
+  end
+
   def test_ruleset_permission_failure_skips_only_the_ruleset
     api = Object.new
     api.define_singleton_method(:all) { |_path| raise GitHub::Error, 'GitHub returned HTTP 403' }
@@ -438,6 +491,15 @@ class ReconcileRepositoriesTest < Minitest::Test
   end
 
 
+
+  def test_organization_repositories_get_no_owner_funding
+    api = FilesAPI.new(COMPLETE.merge('AGENTS.md' => File.read(File.join(TEMPLATES, 'AGENTS.md')),
+                                      '.github/FUNDING.yml' => nil, '.coderabbit.yaml' => nil))
+    reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: false)
+    capture_io { reconciler.send(:reconcile_files, REPO.merge('full_name' => 'berlinrb/berlinrb.org')) }
+
+    assert_equal ['.coderabbit.yaml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
+  end
 
   def test_dry_run_reports_release_notes_without_writing
     api, output = reconcile_files({ 'AGENTS.md' => "# Project\n", '.github/triage.yml' => nil }, dry_run: true)

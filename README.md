@@ -225,6 +225,19 @@ A fork that is the owner's own project rather than a way to contribute upstream
 is listed in `OWNED_FORKS` in `bin/reconcile_repositories.rb` and gets the full
 policy, like any owned repository. `ArduinoTec-Pedals` is the only one.
 
+Repositories in organizations the owner maintains are listed in
+`ORGANIZATION_REPOSITORIES` in `bin/reconcile_repositories.rb` and get the full
+policy too, including screenshot requests, apart from `FUNDING.yml`, which
+would point the organization's project at the owner's own Sponsors profile.
+`berlinrb/berlinrb.org` is the only one. A fine-grained token reaches a single
+account, so each organization needs its own: a fine-grained token created by
+the owner with the organization as resource owner, the same repository
+permissions as `REPOSITORY_POLICY_TOKEN`, stored as `<ORGANIZATION>_POLICY_TOKEN`
+(such as `BERLINRB_POLICY_TOKEN`) and passed by both workflows. Without it, the
+organization's repositories are skipped. CodeRabbit must be installed on the
+organization separately, and Copilot Triage needs its variable and secrets set
+in each repository, as for any other.
+
 Set the `REPOSITORY_POLICY_TOKEN` Actions secret to a fine-grained owner token
 with Administration, Contents, Pull requests, Workflows, and Metadata access for
 every managed repository. Workflows access is what allows the policy pull

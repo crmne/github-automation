@@ -44,6 +44,13 @@ class ReconcileRepositories
   # Forks that are the owner's own projects rather than a way to contribute
   # upstream. They get the full policy, like any owned repository.
   OWNED_FORKS = %w[ArduinoTec-Pedals].freeze
+  # Repositories in organizations the owner maintains. They get the full
+  # policy, apart from GitHub Sponsors funding, which would point the
+  # organization's project at the owner's own Sponsors profile. A fine-grained
+  # token reaches one account, so each organization's repositories are managed
+  # with its own token, from the organization's POLICY_TOKEN_ENV variable.
+  ORGANIZATION_REPOSITORIES = %w[berlinrb/berlinrb.org].freeze
+  POLICY_TOKEN_ENV = '%s_POLICY_TOKEN'
   RELEASE_NOTES_TEMPLATE = 'release-notes-guidance.md'
   RELEASE_NOTES_MARKER = '<!-- github-automation: release-notes -->'
   RELEASE_NOTES_END_MARKER = '<!-- /github-automation: release-notes -->'
@@ -69,8 +76,22 @@ class ReconcileRepositories
     delete_branch_on_merge: true
   }.freeze
 
-  def initialize(api, owner:, templates:, dry_run: true, manage_files: true)
+  def self.token_env(organization)
+    format(POLICY_TOKEN_ENV, organization.upcase.tr('-', '_'))
+  end
+
+  # A GitHub client for each organization in ORGANIZATION_REPOSITORIES whose
+  # token is set in env.
+  def self.organization_apis(env)
+    ORGANIZATION_REPOSITORIES.map { |name| name.split('/').first }.uniq.filter_map do |organization|
+      token = env[token_env(organization)].to_s
+      [organization, GitHub.new(token)] unless token.empty?
+    end.to_h
+  end
+
+  def initialize(api, owner:, templates:, dry_run: true, manage_files: true, organization_apis: {})
     @api = api
+    @organization_apis = organization_apis
     @owner = owner
     @templates = templates
     @dry_run = dry_run
@@ -82,10 +103,42 @@ class ReconcileRepositories
 
     repositories = @api.all('user/repos?affiliation=owner').reject { |repo| repo['archived'] }
     changes = repositories.sum { |repo| reconcile(@api.get("repos/#{repo.fetch('full_name')}")) }
-    puts "#{@dry_run ? 'Would apply' : 'Applied'} #{changes} policy change#{'s' unless changes == 1} across #{repositories.size} repositories."
+    organization_changes, organization_count = reconcile_organizations
+    changes += organization_changes
+    count = repositories.size + organization_count
+    puts "#{@dry_run ? 'Would apply' : 'Applied'} #{changes} policy change#{'s' unless changes == 1} across #{count} repositories."
   end
 
   private
+
+  # Reconciles ORGANIZATION_REPOSITORIES with each organization's own token.
+  # An organization without a token is skipped, so adding one is opt-in.
+  def reconcile_organizations
+    changes = 0
+    count = 0
+    ORGANIZATION_REPOSITORIES.group_by { |name| name.split('/').first }.each do |organization, names|
+      api = @organization_apis[organization]
+      next warn "Skipped #{organization} repositories: no #{self.class.token_env(organization)}" unless api
+
+      begin
+        raise GitHub::Error, 'Token must belong to the repository owner' unless api.get('user')['login'] == @owner
+      rescue GitHub::Error => error
+        next warn "Skipped #{organization} repositories: #{error.message}"
+      end
+
+      reconciler = self.class.new(api, owner: @owner, templates: @templates, dry_run: @dry_run, manage_files: @manage_files)
+      names.each do |name|
+        repo = api.get("repos/#{name}")
+        next if repo['archived']
+
+        count += 1
+        changes += reconciler.send(:reconcile, repo)
+      rescue GitHub::Error => error
+        warn "Skipped #{name}: #{error.message}"
+      end
+    end
+    [changes, count]
+  end
 
   def reconcile(repo)
     name = repo.fetch('full_name')
@@ -151,6 +204,7 @@ class ReconcileRepositories
     sha = @api.get("repos/#{name}/git/ref/heads/#{default_branch}").dig('object', 'sha')
     files = MANAGED_FILES.keys.to_h { |path| [path, content(name, path, sha)] }
     missing = MANAGED_FILES.select { |path, _| files[path].nil? }
+    missing.delete('.github/FUNDING.yml') if ORGANIZATION_REPOSITORIES.include?(name)
     agents = files['AGENTS.md'] && agents_with_release_notes(files['AGENTS.md'], label)
     workflows = PREVIOUS_WORKFLOW_DIGESTS.keys.filter_map do |path|
       upgraded = files[path] && upgraded_workflow(path, files[path], label)
@@ -167,7 +221,7 @@ class ReconcileRepositories
     return change("#{label}: policy pull request (#{description})") {} if @dry_run
 
     branch = 'github-automation/account-policy'
-    existing = @api.all("repos/#{name}/pulls?state=open&head=#{@owner}:#{branch}")
+    existing = @api.all("repos/#{name}/pulls?state=open&head=#{name.split('/').first}:#{branch}")
     return 0 unless existing.empty?
 
     base_tree = @api.get("repos/#{name}/git/commits/#{sha}").dig('tree', 'sha')
@@ -349,7 +403,8 @@ if $PROGRAM_NAME == __FILE__
       owner: ENV.fetch('REPOSITORY_OWNER', 'crmne'),
       templates: File.expand_path('../templates', __dir__),
       dry_run: ENV.fetch('DRY_RUN', 'true') != 'false',
-      manage_files: ENV.fetch('MANAGE_FILES', 'true') == 'true'
+      manage_files: ENV.fetch('MANAGE_FILES', 'true') == 'true',
+      organization_apis: ReconcileRepositories.organization_apis(ENV)
     ).run
   rescue GitHub::Error, JSON::ParserError, KeyError, ArgumentError, IOError, SystemCallError, Timeout::Error => error
     warn "Stopped: #{error.class.name}: #{error.message}"

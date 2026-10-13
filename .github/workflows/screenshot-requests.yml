@@ -32,5 +32,6 @@ jobs:
       - run: ruby bin/request_screenshots.rb
         env:
           SCREENSHOT_GITHUB_TOKEN: ${{ secrets.REPOSITORY_POLICY_TOKEN }}
+          BERLINRB_POLICY_TOKEN: ${{ secrets.BERLINRB_POLICY_TOKEN }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}

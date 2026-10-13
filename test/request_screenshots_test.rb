@@ -242,6 +242,14 @@ class RequestScreenshotsTest < Minitest::Test
     assert_equal 2, @api.posts.size
   end
 
+  def test_listed_repositories_are_checked_and_others_skipped
+    capture_io { RequestScreenshots.new(@api, owner: 'crmne', dry_run: false, now: @now, repositories: ['berlinrb/berlinrb.org']).run }
+    assert_empty @api.posts
+
+    capture_io { RequestScreenshots.new(@api, owner: 'crmne', dry_run: false, now: @now, repositories: ['crmne/example']).run }
+    assert_equal 2, @api.posts.size
+  end
+
   def test_dry_run_changes_nothing_and_logs_only_counts
     output = run_check(dry_run: true)
     assert_empty @api.posts

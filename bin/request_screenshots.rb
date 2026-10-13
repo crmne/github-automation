@@ -97,20 +97,23 @@ class RequestScreenshots
     [(:add_label unless labeled), :comment].compact
   end
 
-  def initialize(api, owner:, dry_run: true, now: Time.now)
-    @api, @owner, @dry_run, @now = api, owner, dry_run, now
+  # repositories limits the check to those repositories, such as an
+  # organization's managed ones; by default it covers the owner's own.
+  def initialize(api, owner:, dry_run: true, now: Time.now, repositories: nil)
+    @api, @owner, @dry_run, @now, @repositories = api, owner, dry_run, now, repositories
     @labels_ready = {}
   end
 
   def run
     raise GitHub::Error, 'Token must belong to the repository owner' unless @api.get('user')['login'] == @owner
 
-    query = URI.encode_www_form(q: "user:#{@owner} is:pr is:open draft:false", sort: 'created', order: 'asc')
+    scope = @repositories ? @repositories.map { |name| "repo:#{name}" }.join(' ') : "user:#{@owner}"
+    query = URI.encode_www_form(q: "#{scope} is:pr is:open draft:false", sort: 'created', order: 'asc')
     repositories = {}
     counts = Hash.new(0)
     @api.all("search/issues?#{query}").each do |issue|
       name = issue.fetch('repository_url').delete_prefix('https://api.github.com/repos/')
-      next unless name.start_with?("#{@owner}/")
+      next unless @repositories ? @repositories.include?(name) : name.start_with?("#{@owner}/")
 
       begin
         repo = repositories[name] ||= @api.get("repos/#{name}")
@@ -222,11 +225,13 @@ end
 
 if $PROGRAM_NAME == __FILE__
   begin
-    RequestScreenshots.new(
-      GitHub.new(ENV.fetch('SCREENSHOT_GITHUB_TOKEN')),
-      owner: ENV.fetch('REPOSITORY_OWNER', 'crmne'),
-      dry_run: ENV.fetch('DRY_RUN', 'true') != 'false'
-    ).run
+    owner = ENV.fetch('REPOSITORY_OWNER', 'crmne')
+    dry_run = ENV.fetch('DRY_RUN', 'true') != 'false'
+    RequestScreenshots.new(GitHub.new(ENV.fetch('SCREENSHOT_GITHUB_TOKEN')), owner: owner, dry_run: dry_run).run
+    ReconcileRepositories.organization_apis(ENV).each do |organization, api|
+      repositories = ReconcileRepositories::ORGANIZATION_REPOSITORIES.select { |name| name.start_with?("#{organization}/") }
+      RequestScreenshots.new(api, owner: owner, dry_run: dry_run, repositories: repositories).run
+    end
   rescue GitHub::Error, JSON::ParserError, KeyError, ArgumentError, IOError, SystemCallError, Timeout::Error => error
     warn "Skipped: #{error.class.name}. No screenshot requests made; check the token and GitHub availability."
   end
