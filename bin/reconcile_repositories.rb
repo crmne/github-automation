@@ -150,9 +150,7 @@ class ReconcileRepositories
     settings = fork ? {} : REPOSITORY_SETTINGS.reject { |key, value| repo[key.to_s] == value }
     changes += change("#{label}: repository settings") { @api.patch("repos/#{name}", settings) } unless settings.empty?
 
-    changes += change("#{label}: watch all activity") do
-      @api.put("repos/#{name}/subscription", { subscribed: true, ignored: false })
-    end unless watching?(name)
+    changes += reconcile_watching(name, label)
 
     unless endpoint_enabled?("repos/#{name}/vulnerability-alerts")
       changes += change("#{label}: vulnerability alerts") { @api.put("repos/#{name}/vulnerability-alerts") }
@@ -170,6 +168,19 @@ class ReconcileRepositories
     changes
   rescue GitHub::Error => error
     warn "Skipped #{label}: #{error.message}"
+    0
+  end
+
+  # An organization's fine-grained token cannot read or change the owner's
+  # watching (GitHub answers 403), so only watching is skipped then.
+  def reconcile_watching(name, label)
+    return 0 if watching?(name)
+
+    change("#{label}: watch all activity") { @api.put("repos/#{name}/subscription", { subscribed: true, ignored: false }) }
+  rescue GitHub::Error => error
+    raise unless error.message.include?('HTTP 403')
+
+    warn "Skipped #{label} watching: the token cannot manage it"
     0
   end
 

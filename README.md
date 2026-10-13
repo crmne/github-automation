@@ -234,7 +234,8 @@ account, so each organization needs its own: a fine-grained token created by
 the owner with the organization as resource owner, the same repository
 permissions as `REPOSITORY_POLICY_TOKEN`, stored as `<ORGANIZATION>_POLICY_TOKEN`
 (such as `BERLINRB_POLICY_TOKEN`) and passed by both workflows. Without it, the
-organization's repositories are skipped. CodeRabbit must be installed on the
+organization's repositories are skipped. Such a token cannot manage the
+owner's watching, so watch those repositories by hand. CodeRabbit must be installed on the
 organization separately, and Copilot Triage needs its variable and secrets set
 in each repository, as for any other.
 

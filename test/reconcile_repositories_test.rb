@@ -523,6 +523,7 @@ class ReconcileRepositoriesTest < Minitest::Test
       case path
       when %r{/subscription\z}
         raise GitHub::Error, 'GitHub returned HTTP 404' if @subscription == :not_found
+        raise GitHub::Error, 'GitHub returned HTTP 403' if @subscription == :forbidden
 
         @subscription
       when %r{/vulnerability-alerts\z} then raise GitHub::Error, 'GitHub returned HTTP 404'
@@ -581,6 +582,13 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_includes calls, 'PUT repos/crmne/project/subscription'
     assert_includes calls, 'PUT repos/crmne/project/vulnerability-alerts'
     refute_includes output, 'Skipped'
+  end
+
+  def test_a_token_that_cannot_manage_watching_skips_only_watching
+    calls, = reconcile_repository(fork: true, dry_run: false, subscription: :forbidden)
+
+    refute_includes calls, 'PUT repos/crmne/project/subscription'
+    assert_includes calls, 'PUT repos/crmne/project/vulnerability-alerts'
   end
 
   def test_leaves_watched_repositories_alone
