@@ -11,7 +11,7 @@ class RequestScreenshots
   MARKER = '<!-- github-automation: needs-screenshots -->'
   COMMENT = <<~MARKDOWN
     #{MARKER}
-    Thanks for this pull request! The Copilot review found user-visible interface changes, so please add before-and-after screenshots or a short recording to the description.
+    Thanks for this pull request! The Copilot review found user-visible interface changes, so please add before-and-after screenshots or a short recording to the description. Drag the files into it so they attach to this pull request; do not commit them to the repository.
 
     Show both light and dark themes if the app has them, and use demo or synthetic content only, never real user data. The `#{LABEL}` label clears itself once the description has them.
   MARKDOWN

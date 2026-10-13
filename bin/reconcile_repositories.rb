@@ -13,11 +13,12 @@ class ReconcileRepositories
     '.github/workflows/board.yml' => 'board.yml',
     '.coderabbit.yaml' => 'coderabbit.yaml'
   }.freeze
-  # SHA-256 digests of every earlier version of each Copilot Triage workflow,
-  # stripped and with LF line endings. A workflow matching one of these was
-  # never edited in its repository, so it is upgraded to the current template.
-  # Add the outgoing digest whenever a template changes.
-  PREVIOUS_WORKFLOW_DIGESTS = {
+  # SHA-256 digests of every earlier version of each Copilot Triage workflow
+  # and of the CodeRabbit configuration, stripped and with LF line endings. A
+  # file matching one of these was never edited in its repository, so it is
+  # upgraded to the current template. Add the outgoing digest whenever a
+  # template changes.
+  PREVIOUS_TEMPLATE_DIGESTS = {
     '.github/workflows/issue-assessment.yml' => %w[
       4dd98a77f8fd80de243fa8f0abfd5a763b5a2e18f90b86bac38c0c44eb7282ba
       9e0602557064cb117fb1d084206c1d45de7db4f9ac6595b2d85461b772741b98
@@ -32,6 +33,10 @@ class ReconcileRepositories
       f22f01965279b998b8bff2e1561aafb10bb8a1cddd69fbbc066f06a624ecd303
       0b10d8b3ed1a13f7b62b4afe6368fad711c8561773a6187be4faa79d777587aa
       04aaf6ab4e3ed1585b5e3e48eb1471fcbe563706d570719d45539a60f3061dae
+    ],
+    '.coderabbit.yaml' => %w[
+      570492062c0b9271b846305d8ae732040d76b1e9da048c12babde3162a1e2119
+      6504e837bae83861119caa48378ff805567ebcb5df5255774194b507c11fc8ed
     ]
   }.freeze
   # Earlier account policy text, replaced when a policy still has it unedited.
@@ -62,6 +67,20 @@ class ReconcileRepositories
     2dd750066b7b3737e051acc7c869f6b53de08fa5a3b03bade1b795b2738505e6
     ff23c373cbbf056ddef4e87140c65271e99546b6786120969877ed866709d6d0
     81fe4319ec361e19ad3c85aa5abd09c4a59a9063c5ae1117b4e39b3b66a4c0af
+  ].freeze
+  PULL_REQUESTS_TEMPLATE = 'pull-request-guidance.md'
+  PULL_REQUESTS_MARKER = '<!-- github-automation: pull-requests -->'
+  PULL_REQUESTS_END_MARKER = '<!-- /github-automation: pull-requests -->'
+  # Digests of every earlier pull-request-guidance.md, as for release notes.
+  PREVIOUS_PULL_REQUESTS_DIGESTS = [].freeze
+  # The account-wide AGENTS.md sections, in the order they are appended. A
+  # repository whose AGENTS.md already gives its own guidance on a section's
+  # subject (own_guidance) does not get that section appended.
+  AGENTS_SECTIONS = [
+    { title: 'release notes', template: RELEASE_NOTES_TEMPLATE, marker: RELEASE_NOTES_MARKER,
+      end_marker: RELEASE_NOTES_END_MARKER, previous: PREVIOUS_RELEASE_NOTES_DIGESTS, own_guidance: :release_guidance? },
+    { title: 'pull request rules', template: PULL_REQUESTS_TEMPLATE, marker: PULL_REQUESTS_MARKER,
+      end_marker: PULL_REQUESTS_END_MARKER, previous: PREVIOUS_PULL_REQUESTS_DIGESTS, own_guidance: nil }
   ].freeze
 
   REPOSITORY_SETTINGS = {
@@ -216,17 +235,17 @@ class ReconcileRepositories
     files = MANAGED_FILES.keys.to_h { |path| [path, content(name, path, sha)] }
     missing = MANAGED_FILES.select { |path, _| files[path].nil? }
     missing.delete('.github/FUNDING.yml') if ORGANIZATION_REPOSITORIES.include?(name)
-    agents = files['AGENTS.md'] && agents_with_release_notes(files['AGENTS.md'], label)
-    workflows = PREVIOUS_WORKFLOW_DIGESTS.keys.filter_map do |path|
-      upgraded = files[path] && upgraded_workflow(path, files[path], label)
+    agents, sections = files['AGENTS.md'] && agents_with_sections(files['AGENTS.md'], label)
+    upgrades = PREVIOUS_TEMPLATE_DIGESTS.keys.filter_map do |path|
+      upgraded = files[path] && upgraded_template(path, files[path], label)
       [path, upgraded] if upgraded
     end
     policy = files['.github/triage.yml'] && triage_policy(files['.github/triage.yml'], label)
     dependabot = content(name, '.github/dependabot.yml', sha)
-    return 0 if missing.empty? && !agents && workflows.empty? && !policy && !dependabot
+    return 0 if missing.empty? && !agents && upgrades.empty? && !policy && !dependabot
 
-    description = (missing.keys + (agents ? ['AGENTS.md release notes'] : []) +
-      workflows.map { |path, _| "upgrade #{File.basename(path)}" } +
+    description = (missing.keys + sections.to_a.map { |title| "AGENTS.md #{title}" } +
+      upgrades.map { |path, _| "upgrade #{File.basename(path)}" } +
       (policy ? ['triage board and pull requests'] : []) +
       (dependabot ? ['remove .github/dependabot.yml'] : [])).join(', ')
     return change("#{label}: policy pull request (#{description})") {} if @dry_run
@@ -238,7 +257,7 @@ class ReconcileRepositories
     base_tree = @api.get("repos/#{name}/git/commits/#{sha}").dig('tree', 'sha')
     entries = missing.map { |path, template| blob_entry(name, path, File.read(File.join(@templates, template))) }
     entries << blob_entry(name, 'AGENTS.md', agents) if agents
-    workflows.each { |path, text| entries << blob_entry(name, path, text) }
+    upgrades.each { |path, text| entries << blob_entry(name, path, text) }
     entries << blob_entry(name, '.github/triage.yml', policy) if policy
     entries << { path: '.github/dependabot.yml', mode: '100644', type: 'blob', sha: nil } if dependabot
     tree = @api.post("repos/#{name}/git/trees", { base_tree: base_tree, tree: entries })
@@ -250,7 +269,7 @@ class ReconcileRepositories
       title: 'Apply account repository policy',
       head: branch,
       base: default_branch,
-      body: "Align this repository with the account-wide maintainer, review, release-notes, triage, board, sponsorship, and dependency policy."
+      body: "Align this repository with the account-wide maintainer, review, pull request, release-notes, triage, board, sponsorship, and dependency policy."
     })
     1
   end
@@ -260,36 +279,51 @@ class ReconcileRepositories
     { path: path, mode: '100644', type: 'blob', sha: blob.fetch('sha') }
   end
 
-  # Returns AGENTS.md with current release-notes guidance, or nil when nothing
-  # should change. A file without the marker gets the guidance appended unless
-  # it already has its own release guidance. A marked block is replaced only
-  # when it holds an unedited earlier version; a locally edited block is
-  # reported and left alone. Files that cannot be read as UTF-8 text
-  # (symlinks, large files) are never touched.
-  def agents_with_release_notes(file, label)
+  # Returns AGENTS.md with every account-wide section current and the titles of
+  # the sections that changed, or nil when nothing should change. Files that
+  # cannot be read as UTF-8 text (symlinks, large files) are never touched.
+  def agents_with_sections(file, label)
     text = file_text(file)
     return nil if text.nil?
 
+    titles = AGENTS_SECTIONS.filter_map do |section|
+      updated = agents_with_section(text, section, label)
+      next unless updated
+
+      text = updated
+      section.fetch(:title)
+    end
+    [text, titles] unless titles.empty?
+  end
+
+  # Returns text with the section current, or nil when it should not change. A
+  # file without the section's marker gets the section appended unless it gives
+  # its own guidance on the subject. A marked block is replaced only when it
+  # holds an unedited earlier version; a locally edited block is reported and
+  # left alone.
+  def agents_with_section(text, section, label)
+    marker, end_marker = section.values_at(:marker, :end_marker)
     newline = text.include?("\r\n") ? "\r\n" : "\n"
-    guidance = File.read(File.join(@templates, RELEASE_NOTES_TEMPLATE)).strip
-    block = "#{RELEASE_NOTES_MARKER}\n#{guidance}\n#{RELEASE_NOTES_END_MARKER}\n".gsub("\n", newline)
-    start = text.index(RELEASE_NOTES_MARKER)
+    guidance = File.read(File.join(@templates, section.fetch(:template))).strip
+    block = "#{marker}\n#{guidance}\n#{end_marker}\n".gsub("\n", newline)
+    start = text.index(marker)
     if start.nil?
-      return nil if release_guidance?(text)
+      own_guidance = section.fetch(:own_guidance)
+      return nil if own_guidance && send(own_guidance, text)
 
       return "#{text.rstrip}#{newline}#{newline}#{block}"
     end
 
-    body_start = start + RELEASE_NOTES_MARKER.length
-    finish = text.index(RELEASE_NOTES_END_MARKER, body_start)
+    body_start = start + marker.length
+    finish = text.index(end_marker, body_start)
     # Blocks appended before the end marker existed run to the end of the file.
     body = finish ? text[body_start...finish] : text[body_start..]
-    rest = finish ? text[(finish + RELEASE_NOTES_END_MARKER.length)..].sub(/\A\r?\n/, '') : ''
+    rest = finish ? text[(finish + end_marker.length)..].sub(/\A\r?\n/, '') : ''
     normalized = body.gsub("\r\n", "\n").strip
     return nil if finish && normalized == guidance
 
-    unless normalized == guidance || PREVIOUS_RELEASE_NOTES_DIGESTS.include?(Digest::SHA256.hexdigest(normalized))
-      warn "Skipped #{label} AGENTS.md release notes: edited locally"
+    unless normalized == guidance || section.fetch(:previous).include?(Digest::SHA256.hexdigest(normalized))
+      warn "Skipped #{label} AGENTS.md #{section.fetch(:title)}: edited locally"
       return nil
     end
 
@@ -297,16 +331,16 @@ class ReconcileRepositories
   end
 
   # Returns the current template when the repository has an unedited earlier
-  # version of the workflow at path, or nil. A locally edited one is reported
-  # and kept.
-  def upgraded_workflow(path, file, label)
+  # version of the managed file at path, or nil. A locally edited one is
+  # reported and kept.
+  def upgraded_template(path, file, label)
     text = file_text(file)
     return nil if text.nil?
 
     template = File.read(File.join(@templates, MANAGED_FILES.fetch(path)))
     normalized = text.gsub("\r\n", "\n").strip
     return nil if normalized == template.strip
-    return template if PREVIOUS_WORKFLOW_DIGESTS.fetch(path).include?(Digest::SHA256.hexdigest(normalized))
+    return template if PREVIOUS_TEMPLATE_DIGESTS.fetch(path).include?(Digest::SHA256.hexdigest(normalized))
 
     warn "Skipped #{label} #{File.basename(path)}: edited locally"
     nil

@@ -74,7 +74,8 @@ video (a Markdown image, `<img>` or `<video>`, a GitHub attachment, or a link to
 a PNG, JPEG, GIF, WebP, AVIF, MP4, MOV, or WebM file), the workflow adds a
 `needs-screenshots` label, creating it if needed, and posts one short comment
 asking for screenshots or a short recording of demo content in light and dark
-themes, never real user data. A hidden marker in that comment keeps it from
+themes, never real user data, attached to the description rather than
+committed to the repository. A hidden marker in that comment keeps it from
 ever being posted again on the same pull request, and the label is only added
 with it, so a maintainer who removes the label keeps it removed. Once the
 description shows media, the label is removed; the comment stays. Commented-out
@@ -117,16 +118,19 @@ commit. For repositories that are not forks, it:
 - opens one pull request when `AGENTS.md`, Copilot instructions, triage policy,
   the Copilot Triage workflows, or GitHub Sponsors funding configuration is
   missing;
-- appends release-notes guidance to an existing `AGENTS.md` that has none, or
-  updates an unedited earlier copy of it, in that same pull request;
-- upgrades unedited earlier Copilot Triage workflows and brings each triage
-  policy to the account's settings, in that same pull request; and
+- appends the release-notes guidance and the pull request rules to an existing
+  `AGENTS.md` that lacks them, or updates unedited earlier copies, in that
+  same pull request;
+- upgrades unedited earlier Copilot Triage workflows and CodeRabbit
+  configurations, and brings each triage policy to the account's settings, in
+  that same pull request; and
 - removes `.github/dependabot.yml` in that same pull request so version-update
   pull requests stay disabled.
 
 The baseline agent policy uses trunk-based maintainer development and requires
-visual evidence for user-interface changes. Existing policy files, apart from
-the managed release-notes section, are never overwritten because
+visual evidence for user-interface changes, attached to the pull request
+rather than committed. Existing policy files, apart from the managed
+`AGENTS.md` sections and unedited earlier templates, are never overwritten because
 project-specific instructions, such as Spotifast's, are more useful than a
 generic replacement. All files for a repository are added in
 one commit so the policy proposal triggers only one CI run per workflow.
@@ -152,7 +156,7 @@ with that variable and its secrets:
   for the board. Without it, triage and the sweep skip the board quietly.
 
 An `issue-assessment.yml` or `board.yml` matching one of its
-`PREVIOUS_WORKFLOW_DIGESTS` was never edited in its repository and is replaced
+`PREVIOUS_TEMPLATE_DIGESTS` was never edited in its repository and is replaced
 with the current template; one edited by hand is reported and left alone. The
 current triage workflow also runs when Copilot posts a review, and the board
 sweep sends forks' pull requests back to it. Add the outgoing digest whenever the
@@ -170,12 +174,20 @@ policy still repeats account settings unchanged, they are dropped, so a change
 to the account file reaches every repository without a pull request; a setting
 a repository changed stays and wins. `AGENTS.md` also joins each policy's
 `sources`, and an unedited instruction to leave closure to the maintainer is
-dropped.
+dropped. Instructions are the exception to sharing: a repository's own
+`instructions` replace the account's, so the account file holds none. The
+triage template's instructions name the pull request rules for new
+repositories; existing ones find them in `AGENTS.md`.
 
 Repositories also get a `.coderabbit.yaml` when they have none: CodeRabbit's
 chill profile, with `request_changes_workflow` so a clean pull request gets an
 approval and one with findings gets "changes requested". Both are review
-events that run triage, so the board knows when CodeRabbit found nothing.
+events that run triage, so the board knows when CodeRabbit found nothing. Two
+pre-merge checks in error mode enforce the pull request rules: one fails a pull
+request that commits review evidence, the other one that takes a dependency
+from anywhere but its registry and the maintainer's repositories. A
+configuration matching an earlier template in `PREVIOUS_TEMPLATE_DIGESTS` is
+upgraded; an edited one is reported and kept.
 
 The release-notes guidance (`templates/release-notes-guidance.md`) follows
 Spotifast's style: read the previous two stable releases (or the most recent
@@ -208,6 +220,19 @@ both ask reviewers to report a mismatch rather than edit inside the markers.
 Nothing else in the file changes, and symlinked or unreadable files are left
 alone. Files are read at the default-branch commit the proposal builds on, so
 an update cannot revert a concurrent change.
+
+The pull request rules (`templates/pull-request-guidance.md`) are a second
+account-wide section, between `<!-- github-automation: pull-requests -->` and
+`<!-- /github-automation: pull-requests -->` markers, kept current the same
+way with `PREVIOUS_PULL_REQUESTS_DIGESTS`. Review evidence (screenshots,
+captures, comparison pages, recordings) goes in the pull request, never the
+repository. Dependencies come from their package registry or from
+repositories the maintainer controls; a git dependency or a patch, override,
+or replace entry may point only there, and adding or changing one needs the
+maintainer's explicit approval. Contributors' pull requests had committed
+review folders and pointed dependencies at their own forks. Unlike the
+release-notes guidance, the section is appended even to an `AGENTS.md` with
+rules of its own, since a repository's own words rarely cover both.
 
 Forks follow their upstream's workflow, so the policy leaves most of them
 alone. They are watched, get vulnerability alerts, and have Dependabot security

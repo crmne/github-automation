@@ -174,6 +174,7 @@ class RequestScreenshotsTest < Minitest::Test
     run_check
     assert_equal [["#{@repo}/issues/1/labels", { labels: [RequestScreenshots::LABEL] }], [@comments, { body: RequestScreenshots::COMMENT }]], @api.posts
     assert_includes RequestScreenshots::COMMENT, RequestScreenshots::MARKER
+    assert_includes RequestScreenshots::COMMENT, 'do not commit them to the repository'
     refute_includes RequestScreenshots::COMMENT, "\u2014"
   end
 

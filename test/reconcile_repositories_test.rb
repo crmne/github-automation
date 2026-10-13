@@ -219,13 +219,42 @@ class ReconcileRepositoriesTest < Minitest::Test
     refute_includes ReconcileRepositories::PREVIOUS_RELEASE_NOTES_DIGESTS, digest
   end
 
-  def test_appends_release_notes_guidance_to_existing_agents_file
+  def pull_request_rules
+    File.read(File.join(TEMPLATES, ReconcileRepositories::PULL_REQUESTS_TEMPLATE)).strip
+  end
+
+  def pull_requests_block(rules = pull_request_rules)
+    "#{ReconcileRepositories::PULL_REQUESTS_MARKER}\n#{rules}\n#{ReconcileRepositories::PULL_REQUESTS_END_MARKER}\n"
+  end
+
+  # The file as the reconciler leaves it once the pull request rules follow.
+  def with_rules(text, newline = "\n")
+    "#{text.rstrip}#{newline}#{newline}#{pull_requests_block.gsub("\n", newline)}"
+  end
+
+  def test_agents_template_contains_pull_request_rules
+    template = File.read(File.join(TEMPLATES, 'AGENTS.md'))
+
+    assert_includes template, pull_requests_block
+    assert_includes pull_request_rules, '## Pull requests'
+    assert_includes pull_request_rules, 'pull request description or its comments'
+    assert_includes pull_request_rules, '`github.com/crmne/`'
+    assert_includes pull_request_rules, "contributor's fork"
+    assert_includes pull_request_rules, 'explicit approval'
+    refute_includes pull_request_rules, "—"
+  end
+
+  def test_current_pull_request_rules_are_not_listed_as_a_previous_version
+    refute_includes ReconcileRepositories::PREVIOUS_PULL_REQUESTS_DIGESTS, Digest::SHA256.hexdigest(pull_request_rules)
+  end
+
+  def test_appends_the_account_sections_to_an_existing_agents_file
     api, = reconcile_files({ 'AGENTS.md' => "# Project\n\nKeep it small.\n\n" })
 
     assert_equal 1, @changes
     assert_equal 1, api.blobs.size
     appended = api.blobs.first
-    assert_equal "# Project\n\nKeep it small.\n\n#{managed_block}", appended
+    assert_equal "# Project\n\nKeep it small.\n\n#{managed_block}\n#{pull_requests_block}", appended
     assert_equal [{ path: 'AGENTS.md', mode: '100644', type: 'blob', sha: 'blob1' }], api.trees.first.fetch(:tree)
   end
 
@@ -242,12 +271,35 @@ class ReconcileRepositoriesTest < Minitest::Test
       "# Guide\n\nRead the previous releases before writing release notes.\n",
       "# Guide\n\n#{managed_block}\n## Communication\n"
     ].each do |agents|
-      api, output = reconcile_files({ 'AGENTS.md' => agents })
+      api, output = reconcile_files({ 'AGENTS.md' => with_rules(agents) })
 
       assert_equal 0, @changes, agents
       assert_empty api.writes, agents
       assert_empty output, agents
     end
+  end
+
+  def test_appends_pull_request_rules_beside_a_repositorys_own_release_guidance
+    agents = "# Guide\n\n## Releases\n\nA release is not the tag alone.\n"
+    api, = reconcile_files({ 'AGENTS.md' => agents })
+
+    assert_equal [with_rules(agents)], api.blobs
+  end
+
+  def test_pull_request_rules_do_not_count_as_release_guidance
+    api, = reconcile_files({ 'AGENTS.md' => "# Project\n\n#{pull_requests_block}" })
+
+    assert_equal ["# Project\n\n#{pull_requests_block}\n#{managed_block}"], api.blobs
+  end
+
+  def test_reports_and_keeps_locally_edited_pull_request_rules
+    edited = pull_requests_block(pull_request_rules.sub('as a blocker', 'as a concern'))
+    api, output, error = reconcile_files({ 'AGENTS.md' => "# Guide\n\n#{managed_block}\n#{edited}" })
+
+    assert_equal 0, @changes
+    assert_empty api.writes
+    assert_empty output
+    assert_equal "Skipped crmne/project AGENTS.md pull request rules: edited locally\n", error
   end
 
   # The appended form deployed before the end marker existed: the block runs
@@ -271,7 +323,7 @@ class ReconcileRepositoriesTest < Minitest::Test
       api, = reconcile_files({ 'AGENTS.md' => "# Project\n\n#{legacy_block(version)}" })
 
       assert_equal 1, @changes, version
-      assert_equal ["# Project\n\n#{managed_block}"], api.blobs, version
+      assert_equal [with_rules("# Project\n\n#{managed_block}")], api.blobs, version
     end
   end
 
@@ -279,20 +331,20 @@ class ReconcileRepositoriesTest < Minitest::Test
     agents = "# Guide\n\n#{managed_block(previous_guidance('v3'))}\n## Communication\n\nBe brief.\n"
     api, = reconcile_files({ 'AGENTS.md' => agents })
 
-    assert_equal ["# Guide\n\n#{managed_block}\n## Communication\n\nBe brief.\n"], api.blobs
+    assert_equal [with_rules("# Guide\n\n#{managed_block}\n## Communication\n\nBe brief.\n")], api.blobs
   end
 
   def test_upgrades_a_current_legacy_block_by_adding_the_end_marker
     api, = reconcile_files({ 'AGENTS.md' => "# Project\n\n#{ReconcileRepositories::RELEASE_NOTES_MARKER}\n#{guidance}\n" })
 
-    assert_equal ["# Project\n\n#{managed_block}"], api.blobs
+    assert_equal [with_rules("# Project\n\n#{managed_block}")], api.blobs
   end
 
   def test_replaces_windows_line_ending_blocks_without_mixing_line_endings
     agents = "# Project\n\n#{legacy_block('v3')}".gsub("\n", "\r\n")
     api, = reconcile_files({ 'AGENTS.md' => agents })
 
-    assert_equal ["# Project\n\n#{managed_block}".gsub("\n", "\r\n")], api.blobs
+    assert_equal [with_rules("# Project\n\n#{managed_block}".gsub("\n", "\r\n"), "\r\n")], api.blobs
   end
 
   def test_reports_and_keeps_locally_edited_blocks
@@ -301,7 +353,7 @@ class ReconcileRepositoriesTest < Minitest::Test
       "# Guide\n\n#{legacy_block('v3')}\n## Local notes\n",
       "# Guide\n\n#{managed_block(previous_guidance('v3').sub('Never use', 'Avoid'))}"
     ].each do |agents|
-      api, output, error = reconcile_files({ 'AGENTS.md' => agents })
+      api, output, error = reconcile_files({ 'AGENTS.md' => with_rules(agents) })
 
       assert_equal 0, @changes, agents
       assert_empty api.writes, agents
@@ -351,16 +403,23 @@ class ReconcileRepositoriesTest < Minitest::Test
     File.read(File.expand_path("fixtures/issue-assessment-#{version}.yml", __dir__))
   end
 
-  def test_fixtures_cover_every_previous_workflow_digest
+  def previous_coderabbit(version)
+    File.read(File.expand_path("fixtures/coderabbit-#{version}.yaml", __dir__))
+  end
+
+  def test_fixtures_cover_every_previous_template_digest
     digests = %w[v1 v2 v3 v4 v5 v6 v7 v8].map { |version| Digest::SHA256.hexdigest(previous_workflow(version).strip) }
     boards = %w[v1 v2 v3].map do |version|
       Digest::SHA256.hexdigest(File.read(File.expand_path("fixtures/board-#{version}.yml", __dir__)).strip)
     end
+    coderabbits = %w[v1 v2].map { |version| Digest::SHA256.hexdigest(previous_coderabbit(version).strip) }
 
-    assert_equal ReconcileRepositories::PREVIOUS_WORKFLOW_DIGESTS.fetch('.github/workflows/issue-assessment.yml'), digests
-    assert_equal boards, ReconcileRepositories::PREVIOUS_WORKFLOW_DIGESTS.fetch('.github/workflows/board.yml')
+    assert_equal ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('.github/workflows/issue-assessment.yml'), digests
+    assert_equal boards, ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('.github/workflows/board.yml')
+    assert_equal coderabbits, ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('.coderabbit.yaml')
     refute_includes boards, Digest::SHA256.hexdigest(File.read(File.join(TEMPLATES, 'board.yml')).strip)
     refute_includes digests, Digest::SHA256.hexdigest(workflow_template.strip)
+    refute_includes coderabbits, Digest::SHA256.hexdigest(File.read(File.join(TEMPLATES, 'coderabbit.yaml')).strip)
   end
 
   def test_upgrades_an_unedited_board_workflow
@@ -479,18 +538,39 @@ class ReconcileRepositoriesTest < Minitest::Test
     api, = reconcile_current({ '.coderabbit.yaml' => nil })
 
     assert_equal ['.coderabbit.yaml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
-    config = YAML.safe_load(api.blobs.first)
-    assert_equal({ 'profile' => 'chill', 'request_changes_workflow' => true }, config.fetch('reviews'))
+    reviews = YAML.safe_load(api.blobs.first).fetch('reviews')
+    assert_equal 'chill', reviews.fetch('profile')
+    assert_equal true, reviews.fetch('request_changes_workflow')
+  end
+
+  def test_coderabbit_checks_pull_requests_for_review_evidence_and_dependency_sources
+    checks = YAML.safe_load_file(File.join(TEMPLATES, 'coderabbit.yaml')).dig('reviews', 'pre_merge_checks', 'custom_checks')
+
+    assert_equal ['Review evidence stays out of the repository', 'Dependencies from sources the maintainer controls'],
+                 checks.map { |check| check.fetch('name') }
+    checks.each do |check|
+      assert_equal 'error', check.fetch('mode')
+      assert_operator check.fetch('name').length, :<=, 50
+      refute_includes check.fetch('instructions'), "—"
+    end
+    assert_includes checks.last.fetch('instructions'), 'github.com/crmne/'
+  end
+
+  def test_upgrades_an_unedited_coderabbit_configuration
+    %w[v1 v2].each do |version|
+      api, = reconcile_current({ '.coderabbit.yaml' => previous_coderabbit(version) })
+
+      assert_equal [File.read(File.join(TEMPLATES, 'coderabbit.yaml'))], api.blobs, version
+    end
   end
 
   def test_keeps_an_existing_coderabbit_configuration
-    api, = reconcile_current({ '.coderabbit.yaml' => "reviews:\n  profile: assertive\n" })
+    api, _output, error = reconcile_current({ '.coderabbit.yaml' => "reviews:\n  profile: assertive\n" })
 
     assert_equal 0, @changes
     assert_empty api.writes
+    assert_equal "Skipped crmne/project .coderabbit.yaml: edited locally\n", error
   end
-
-
 
   def test_organization_repositories_get_no_owner_funding
     api = FilesAPI.new(COMPLETE.merge('AGENTS.md' => File.read(File.join(TEMPLATES, 'AGENTS.md')),
@@ -501,12 +581,12 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_equal ['.coderabbit.yaml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
   end
 
-  def test_dry_run_reports_release_notes_without_writing
+  def test_dry_run_reports_agents_sections_without_writing
     api, output = reconcile_files({ 'AGENTS.md' => "# Project\n", '.github/triage.yml' => nil }, dry_run: true)
 
     assert_equal 1, @changes
     assert_empty api.writes
-    assert_includes output, 'policy pull request (.github/triage.yml, AGENTS.md release notes)'
+    assert_includes output, 'policy pull request (.github/triage.yml, AGENTS.md release notes, AGENTS.md pull request rules)'
   end
 
   class RepositoryAPI
