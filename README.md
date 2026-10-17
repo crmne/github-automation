@@ -143,15 +143,14 @@ Every repository gets two workflows from
 answers, labels, moves discussions that are really issues, requests a Copilot
 review when a change deserves one, and puts the item on the account's
 [Maintainer board](https://github.com/users/crmne/projects/1). `board.yml` runs
-the board's daily sweep without a model. Both run only where the
-`COPILOT_ISSUE_ASSESSMENT_ENABLED` variable is `true`, so a repository opts in
-with that variable and its secrets:
+the board's daily sweep without a model. Both run wherever they are installed,
+and skip a repository until its `.github/triage.yml` is on the default branch.
+They use these secrets:
 
 - `COPILOT_GITHUB_TOKEN`: the owner's fine-grained token with Copilot Requests
   and, to request reviews, Pull requests: Read and write.
 - `OPENROUTER_API_KEY`: an OpenRouter key for the fallback model, used only
-  once the Copilot allowance is spent; those runs update the board and post
-  nothing.
+  once the Copilot allowance is spent; those runs triage like Copilot runs.
 - `TRIAGE_PROJECT_TOKEN`: a classic token with the `project` and `repo` scopes,
   for the board. Without it, triage and the sweep skip the board quietly.
 
@@ -159,7 +158,9 @@ An `issue-assessment.yml` or `board.yml` matching one of its
 `PREVIOUS_TEMPLATE_DIGESTS` was never edited in its repository and is replaced
 with the current template; one edited by hand is reported and left alone. The
 current triage workflow also runs when Copilot posts a review, and the board
-sweep sends forks' pull requests back to it. Add the outgoing digest whenever the
+sweep sends forks' pull requests back to it. A manual run takes `quiet` to place
+the card on the board without posting, labeling, or closing anything, for
+re-assessing open reports. Add the outgoing digest whenever the
 template changes. Both workflows are short: they name the events and call
 Copilot Triage's shared workflows at `v0` with `secrets: inherit`, so
 permissions, queueing, inputs, and new secrets update with the tag and need no
