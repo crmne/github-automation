@@ -408,7 +408,7 @@ class ReconcileRepositoriesTest < Minitest::Test
   end
 
   def test_fixtures_cover_every_previous_template_digest
-    digests = %w[v1 v2 v3 v4 v5 v6 v7 v8].map { |version| Digest::SHA256.hexdigest(previous_workflow(version).strip) }
+    digests = %w[v1 v2 v3 v4 v5 v6 v7 v8 v9].map { |version| Digest::SHA256.hexdigest(previous_workflow(version).strip) }
     boards = %w[v1 v2 v3].map do |version|
       Digest::SHA256.hexdigest(File.read(File.expand_path("fixtures/board-#{version}.yml", __dir__)).strip)
     end
@@ -435,7 +435,7 @@ class ReconcileRepositoriesTest < Minitest::Test
   end
 
   def test_upgrades_every_unedited_workflow_to_triage_pull_requests_and_the_board
-    %w[v1 v2 v3 v4 v5 v6 v7 v8].each do |version|
+    %w[v1 v2 v3 v4 v5 v6 v7 v8 v9].each do |version|
       api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => previous_workflow(version) })
 
       assert_equal [workflow_template], api.blobs, version

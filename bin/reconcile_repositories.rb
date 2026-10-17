@@ -28,6 +28,7 @@ class ReconcileRepositories
       d0ad910f49be75e69c433c16653378a13235ee12a20b4b26053681bbc6d7068f
       57d77caa81c044b37d4bffa78011642c8407c435411403b174689bd835bb98e1
       2d3771e54e82502ef19a130ae8bab05df5bbc1f01b4fef9830671feaa20b02ca
+      3795d977b5adbc6a654eb9af6fb45db868146e3e7deb1fd1f7cc6b2b609176f8
     ],
     '.github/workflows/board.yml' => %w[
       f22f01965279b998b8bff2e1561aafb10bb8a1cddd69fbbc066f06a624ecd303
