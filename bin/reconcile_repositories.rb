@@ -57,6 +57,9 @@ class ReconcileRepositories
   # with its own token, from the organization's POLICY_TOKEN_ENV variable.
   ORGANIZATION_REPOSITORIES = %w[berlinrb/berlinrb.org].freeze
   POLICY_TOKEN_ENV = '%s_POLICY_TOKEN'
+  # The owner's Patreon handle, added to every owned FUNDING.yml that names no
+  # Patreon page, beside its existing entries.
+  PATREON = 'crmne'
   RELEASE_NOTES_TEMPLATE = 'release-notes-guidance.md'
   RELEASE_NOTES_MARKER = '<!-- github-automation: release-notes -->'
   RELEASE_NOTES_END_MARKER = '<!-- /github-automation: release-notes -->'
@@ -242,12 +245,15 @@ class ReconcileRepositories
       [path, upgraded] if upgraded
     end
     policy = files['.github/triage.yml'] && triage_policy(files['.github/triage.yml'], label)
+    funding = !ORGANIZATION_REPOSITORIES.include?(name) && files['.github/FUNDING.yml'] &&
+              funding_with_patreon(files['.github/FUNDING.yml'], label)
     dependabot = content(name, '.github/dependabot.yml', sha)
-    return 0 if missing.empty? && !agents && upgrades.empty? && !policy && !dependabot
+    return 0 if missing.empty? && !agents && upgrades.empty? && !policy && !funding && !dependabot
 
     description = (missing.keys + sections.to_a.map { |title| "AGENTS.md #{title}" } +
       upgrades.map { |path, _| "upgrade #{File.basename(path)}" } +
       (policy ? ['triage board and pull requests'] : []) +
+      (funding ? ['Patreon in FUNDING.yml'] : []) +
       (dependabot ? ['remove .github/dependabot.yml'] : [])).join(', ')
     return change("#{label}: policy pull request (#{description})") {} if @dry_run
 
@@ -260,6 +266,7 @@ class ReconcileRepositories
     entries << blob_entry(name, 'AGENTS.md', agents) if agents
     upgrades.each { |path, text| entries << blob_entry(name, path, text) }
     entries << blob_entry(name, '.github/triage.yml', policy) if policy
+    entries << blob_entry(name, '.github/FUNDING.yml', funding) if funding
     entries << { path: '.github/dependabot.yml', mode: '100644', type: 'blob', sha: nil } if dependabot
     tree = @api.post("repos/#{name}/git/trees", { base_tree: base_tree, tree: entries })
     commit = @api.post("repos/#{name}/git/commits", {
@@ -391,6 +398,32 @@ class ReconcileRepositories
     text.include?(RELEASE_NOTES_MARKER) ||
       text.match?(/^\#{2,}\s+Releas/i) ||
       text.match?(/release[- ]notes/i)
+  end
+
+  # Returns FUNDING.yml with the owner's Patreon page added, or nil when it
+  # already names one or cannot be read. Every other entry and comment stays.
+  # An empty `patreon:` line, like GitHub's commented template, is filled in.
+  def funding_with_patreon(file, label)
+    original = file_text(file)
+    return nil if original.nil?
+
+    funding = YAML.safe_load(original)
+    funding = {} if funding.nil?
+    unless funding.is_a?(Hash)
+      warn "Skipped #{label} FUNDING.yml: not a mapping"
+      return nil
+    end
+    return nil unless funding['patreon'].to_s.strip.empty?
+
+    newline = original.include?("\r\n") ? "\r\n" : "\n"
+    line = "patreon: #{PATREON}"
+    empty = /^patreon:[ \t]*(?:#[^\r\n]*)?$/
+    return original.sub(empty, line) if original.match?(empty)
+
+    "#{original.rstrip}#{newline}#{line}#{newline}"
+  rescue Psych::Exception
+    warn "Skipped #{label} FUNDING.yml: not valid YAML"
+    nil
   end
 
   def file_text(file)

@@ -175,7 +175,7 @@ class ReconcileRepositoriesTest < Minitest::Test
   COMPLETE = {
     '.github/copilot-instructions.md' => "copilot\n",
     '.github/triage.yml' => "triage\n",
-    '.github/FUNDING.yml' => "github: crmne\n",
+    '.github/FUNDING.yml' => "github: crmne\npatreon: crmne\n",
     '.github/workflows/issue-assessment.yml' => File.read(File.join(TEMPLATES, 'issue-assessment.yml')),
     '.github/workflows/board.yml' => File.read(File.join(TEMPLATES, 'board.yml')),
     '.coderabbit.yaml' => File.read(File.join(TEMPLATES, 'coderabbit.yaml'))
@@ -579,6 +579,56 @@ class ReconcileRepositoriesTest < Minitest::Test
     capture_io { reconciler.send(:reconcile_files, REPO.merge('full_name' => 'berlinrb/berlinrb.org')) }
 
     assert_equal ['.coderabbit.yaml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
+  end
+
+  def test_adds_patreon_to_a_funding_file_and_keeps_its_entries
+    api, = reconcile_current({ '.github/FUNDING.yml' => "github: [crmne]\nbuy_me_a_coffee: crmne\n" })
+
+    assert_equal ['.github/FUNDING.yml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
+    assert_equal "github: [crmne]\nbuy_me_a_coffee: crmne\npatreon: crmne\n", api.blobs.first
+  end
+
+  def test_fills_the_empty_patreon_line_of_githubs_funding_template
+    template = "# These are supported funding model platforms\n\ngithub: [crmne] # Replace with up to 4\n" \
+               "patreon: # Replace with a single Patreon username\nko_fi: # Replace with a single Ko-fi username\n"
+    api, = reconcile_current({ '.github/FUNDING.yml' => template })
+
+    assert_equal template.sub('patreon: # Replace with a single Patreon username', 'patreon: crmne'), api.blobs.first
+  end
+
+  def test_keeps_windows_line_endings_when_adding_patreon
+    api, = reconcile_current({ '.github/FUNDING.yml' => "github:\r\n  - crmne\r\n" })
+
+    assert_equal "github:\r\n  - crmne\r\npatreon: crmne\r\n", api.blobs.first
+  end
+
+  def test_leaves_a_funding_file_that_names_a_patreon_page
+    api, = reconcile_current({ '.github/FUNDING.yml' => "github: crmne\npatreon: someone\n" })
+
+    assert_equal 0, @changes
+    assert_empty api.writes
+  end
+
+  def test_reports_an_invalid_funding_file_instead_of_changing_it
+    _api, _output, error = reconcile_current({ '.github/FUNDING.yml' => "github: [unclosed\n" })
+
+    assert_equal 0, @changes
+    assert_includes error, 'FUNDING.yml: not valid YAML'
+  end
+
+  def test_organization_repositories_get_no_patreon
+    api = FilesAPI.new(COMPLETE.merge('AGENTS.md' => File.read(File.join(TEMPLATES, 'AGENTS.md')),
+                                      '.github/FUNDING.yml' => "github: berlinrb\n"))
+    reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: false)
+    capture_io { reconciler.send(:reconcile_files, REPO.merge('full_name' => 'berlinrb/berlinrb.org')) }
+
+    assert_empty api.writes
+  end
+
+  def test_new_funding_files_name_github_sponsors_and_patreon
+    funding = YAML.safe_load_file(File.join(TEMPLATES, 'FUNDING.yml'))
+
+    assert_equal({ 'github' => ['crmne'], 'patreon' => 'crmne' }, funding)
   end
 
   def test_dry_run_reports_agents_sections_without_writing

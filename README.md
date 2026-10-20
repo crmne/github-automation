@@ -116,8 +116,10 @@ commit. For repositories that are not forks, it:
 - enables vulnerability alerts but disables Dependabot security-update pull
   requests;
 - opens one pull request when `AGENTS.md`, Copilot instructions, triage policy,
-  the Copilot Triage workflows, or GitHub Sponsors funding configuration is
-  missing;
+  the Copilot Triage workflows, or the funding configuration (GitHub Sponsors
+  and Patreon) is missing;
+- adds the owner's Patreon page to an existing `.github/FUNDING.yml` that names
+  none, keeping its other entries and comments, in that same pull request;
 - appends the release-notes guidance and the pull request rules to an existing
   `AGENTS.md` that lacks them, or updates unedited earlier copies, in that
   same pull request;
