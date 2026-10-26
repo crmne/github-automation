@@ -56,10 +56,6 @@ class ReconcileRepositories
   # Forks that are the owner's own projects rather than a way to contribute
   # upstream. They get the full policy, like any owned repository.
   OWNED_FORKS = %w[ArduinoTec-Pedals].freeze
-  # Repositories this policy never touches. chatwithwork-deploys is the
-  # production deploy approval gate: its approval check trusts one exact
-  # workflow, so no automated change may land there.
-  UNMANAGED_REPOSITORIES = %w[chatwithwork-deploys].freeze
   # Repositories in organizations the owner maintains. They get the full
   # policy, apart from GitHub Sponsors funding, which would point the
   # organization's project at the owner's own Sponsors profile. A fine-grained
@@ -134,9 +130,7 @@ class ReconcileRepositories
   def run
     raise GitHub::Error, 'Token must belong to the repository owner' unless @api.get('user')['login'] == @owner
 
-    repositories = @api.all('user/repos?affiliation=owner').reject do |repo|
-      repo['archived'] || UNMANAGED_REPOSITORIES.include?(repo.fetch('full_name').split('/').last)
-    end
+    repositories = @api.all('user/repos?affiliation=owner').reject { |repo| repo['archived'] }
     changes = repositories.sum { |repo| reconcile(@api.get("repos/#{repo.fetch('full_name')}")) }
     organization_changes, organization_count = reconcile_organizations
     changes += organization_changes

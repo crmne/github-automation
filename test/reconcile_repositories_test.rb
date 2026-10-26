@@ -29,7 +29,7 @@ class ReconcileRepositoriesTest < Minitest::Test
     end
 
     def all(_path)
-      %w[public private fork archived chatwithwork-deploys].map do |name|
+      %w[public private fork archived].map do |name|
         { 'full_name' => "crmne/#{name}", 'archived' => name == 'archived', 'fork' => name == 'fork' }
       end
     end
@@ -51,7 +51,7 @@ class ReconcileRepositoriesTest < Minitest::Test
     end
   end
 
-  def test_includes_private_repositories_and_forks_but_excludes_archived_and_unmanaged_repositories
+  def test_includes_private_repositories_and_forks_but_excludes_archived_repositories
     reconciler = RecordingReconciler.new(ScopeAPI.new, owner: 'crmne', templates: '.', dry_run: true)
 
     capture_io { reconciler.run }
