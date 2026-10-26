@@ -534,6 +534,23 @@ class ReconcileRepositoriesTest < Minitest::Test
     refute policy.key?('board')
   end
 
+  def test_private_repositories_do_not_get_the_triage_workflows
+    api = FilesAPI.new(COMPLETE.merge('AGENTS.md' => File.read(File.join(TEMPLATES, 'AGENTS.md')),
+                                      '.github/workflows/issue-assessment.yml' => nil,
+                                      '.github/workflows/board.yml' => nil, '.coderabbit.yaml' => nil))
+    reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: false)
+    capture_io { reconciler.send(:reconcile_files, REPO.merge('private' => true)) }
+
+    assert_equal ['.coderabbit.yaml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
+  end
+
+  def test_public_repositories_get_the_triage_workflows
+    api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => nil, '.github/workflows/board.yml' => nil })
+
+    assert_equal %w[.github/workflows/issue-assessment.yml .github/workflows/board.yml],
+                 api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
+  end
+
   def test_adds_a_coderabbit_configuration_that_approves_clean_pull_requests
     api, = reconcile_current({ '.coderabbit.yaml' => nil })
 

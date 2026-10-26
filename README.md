@@ -139,8 +139,11 @@ one commit so the policy proposal triggers only one CI run per workflow.
 
 ### Copilot Triage
 
-Every repository gets two workflows from
-[Copilot Triage](https://github.com/crmne/copilot-triage).
+Every public repository gets two workflows from
+[Copilot Triage](https://github.com/crmne/copilot-triage). Private repositories
+do not, since their Actions minutes are billed and most have nothing to triage:
+add the workflows by hand to one that needs them, and the reconciler keeps them
+current from then on.
 `issue-assessment.yml` triages issues, discussions, and pull requests: it
 answers, labels, moves discussions that are really issues, requests a Copilot
 review when a change deserves one, and puts the item on the account's

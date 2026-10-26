@@ -13,6 +13,10 @@ class ReconcileRepositories
     '.github/workflows/board.yml' => 'board.yml',
     '.coderabbit.yaml' => 'coderabbit.yaml'
   }.freeze
+  # Copilot Triage's workflows, which private repositories do not get unless
+  # they already have them: their Actions minutes are billed, and most private
+  # repositories have no issues or pull requests to triage.
+  PUBLIC_ONLY_FILES = %w[.github/workflows/issue-assessment.yml .github/workflows/board.yml].freeze
   # SHA-256 digests of every earlier version of each Copilot Triage workflow
   # and of the CodeRabbit configuration, stripped and with LF line endings. A
   # file matching one of these was never edited in its repository, so it is
@@ -239,6 +243,7 @@ class ReconcileRepositories
     files = MANAGED_FILES.keys.to_h { |path| [path, content(name, path, sha)] }
     missing = MANAGED_FILES.select { |path, _| files[path].nil? }
     missing.delete('.github/FUNDING.yml') if ORGANIZATION_REPOSITORIES.include?(name)
+    PUBLIC_ONLY_FILES.each { |path| missing.delete(path) } if repo['private']
     agents, sections = files['AGENTS.md'] && agents_with_sections(files['AGENTS.md'], label)
     upgrades = PREVIOUS_TEMPLATE_DIGESTS.keys.filter_map do |path|
       upgraded = files[path] && upgraded_template(path, files[path], label)
