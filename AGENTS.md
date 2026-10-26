@@ -9,8 +9,9 @@ Create releases only from tags whose commits are reachable from the default
 branch. Never publish a release from an unmerged branch.
 
 This repository changes policy across every active owned repository, including
-private repositories and forks. Archived repositories are the only blanket
-exclusion. Empty repositories receive settings but cannot receive files or a
+private repositories and forks. Archived repositories, and the few listed in
+`UNMANAGED_REPOSITORIES` (such as the production deploy approval gate), are
+the only exclusions. Empty repositories receive settings but cannot receive files or a
 default-branch ruleset until they have an initial commit. Forks follow their
 upstream's workflow: they are only watched and given vulnerability alerts, never
 repository settings, a ruleset, or policy-file pull requests.
