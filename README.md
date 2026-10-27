@@ -200,7 +200,7 @@ account's Renovate policy: one pull request per repository each Monday morning
 (Berlin) with every minor and patch update, merged once CI passes and each
 release is three days old; security fixes at any time, also merged on green;
 majors one at a time, left for review; no Dependency Dashboard. Commit-pinned
-git dependencies (our patched forks) and egui are never moved, and the
+git dependencies (our patched forks), egui and winit are never moved, and the
 fastframe crates move together. Renovate's own onboarding `renovate.json` is
 upgraded to point here; a repository's own configuration is reported and kept,
 and should add the preset to its `extends`.

@@ -33,8 +33,8 @@
       "enabled": false
     },
     {
-      "description": "egui comes from the crmne/egui fork, which has to be ported before any app moves",
-      "matchDepNames": ["egui", "egui_*", "egui-*", "eframe", "ecolor", "emath", "epaint", "epaint_default_fonts"],
+      "description": "egui and winit come from the crmne/egui and crmne/winit forks, which have to be ported before any app moves",
+      "matchDepNames": ["egui", "egui_*", "egui-*", "eframe", "ecolor", "emath", "epaint", "epaint_default_fonts", "winit"],
       "enabled": false
     },
     {
