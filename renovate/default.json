@@ -28,6 +28,11 @@
       "automerge": false
     },
     {
+      "description": "Terraform version constraints stay as written; only the lock file moves",
+      "matchManagers": ["terraform"],
+      "rangeStrategy": "update-lockfile"
+    },
+    {
       "description": "Git dependencies pinned to a commit carry our own patches; moving the pin to a branch head drops them",
       "matchDatasources": ["git-refs"],
       "enabled": false
