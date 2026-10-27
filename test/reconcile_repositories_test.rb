@@ -178,7 +178,8 @@ class ReconcileRepositoriesTest < Minitest::Test
     '.github/FUNDING.yml' => "github: crmne\npatreon: crmne\n",
     '.github/workflows/issue-assessment.yml' => File.read(File.join(TEMPLATES, 'issue-assessment.yml')),
     '.github/workflows/board.yml' => File.read(File.join(TEMPLATES, 'board.yml')),
-    '.coderabbit.yaml' => File.read(File.join(TEMPLATES, 'coderabbit.yaml'))
+    '.coderabbit.yaml' => File.read(File.join(TEMPLATES, 'coderabbit.yaml')),
+    'renovate.json' => File.read(File.join(TEMPLATES, 'renovate.json'))
   }.freeze
   REPO = { 'full_name' => 'crmne/project', 'default_branch' => 'main' }.freeze
 
@@ -417,6 +418,8 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_equal ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('.github/workflows/issue-assessment.yml'), digests
     assert_equal boards, ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('.github/workflows/board.yml')
     assert_equal coderabbits, ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('.coderabbit.yaml')
+    renovate = Digest::SHA256.hexdigest(File.read(File.expand_path('fixtures/renovate-v1.json', __dir__)).strip)
+    assert_equal [renovate], ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('renovate.json')
     refute_includes boards, Digest::SHA256.hexdigest(File.read(File.join(TEMPLATES, 'board.yml')).strip)
     refute_includes digests, Digest::SHA256.hexdigest(workflow_template.strip)
     refute_includes coderabbits, Digest::SHA256.hexdigest(File.read(File.join(TEMPLATES, 'coderabbit.yaml')).strip)
@@ -579,6 +582,19 @@ class ReconcileRepositoriesTest < Minitest::Test
 
       assert_equal [File.read(File.join(TEMPLATES, 'coderabbit.yaml'))], api.blobs, version
     end
+  end
+
+  def test_points_renovates_onboarding_configuration_at_the_account_policy
+    onboarding = File.read(File.expand_path('fixtures/renovate-v1.json', __dir__))
+    api, = reconcile_current({ 'renovate.json' => onboarding })
+
+    assert_equal [File.read(File.join(TEMPLATES, 'renovate.json'))], api.blobs
+  end
+
+  def test_keeps_a_repositorys_own_renovate_configuration
+    reconcile_current({ 'renovate.json' => %({"extends": ["config:recommended"], "timezone": "Europe/Berlin"}\n) })
+
+    assert_equal 0, @changes
   end
 
   def test_keeps_an_existing_coderabbit_configuration

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Account-wide Renovate policy: one weekly pull request per repository for minor and patch updates, merged when CI passes; security fixes at once; majors wait for review.",
+  "extends": ["config:recommended"],
+  "timezone": "Europe/Berlin",
+  "schedule": ["before 6am on monday"],
+  "dependencyDashboard": false,
+  "rebaseWhen": "conflicted",
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"],
+    "automerge": true
+  },
+  "packageRules": [
+    {
+      "description": "Minor and patch updates: one weekly group, merged once CI passes and each release is three days old",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "weekly dependency updates",
+      "groupSlug": "weekly",
+      "automerge": true,
+      "minimumReleaseAge": "3 days",
+      "internalChecksFilter": "strict"
+    },
+    {
+      "description": "Major updates: one pull request each, never merged automatically",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": "Git dependencies pinned to a commit carry our own patches; moving the pin to a branch head drops them",
+      "matchDatasources": ["git-refs"],
+      "enabled": false
+    },
+    {
+      "description": "egui comes from the crmne/egui fork, which has to be ported before any app moves",
+      "matchDepNames": ["egui", "egui_*", "egui-*", "eframe", "ecolor", "emath", "epaint", "epaint_default_fonts"],
+      "enabled": false
+    },
+    {
+      "description": "fastframe crates release together and must move together",
+      "matchDepNames": ["fastframe", "fastframe-*"],
+      "groupName": "fastframe",
+      "groupSlug": "fastframe"
+    }
+  ]
+}

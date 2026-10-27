@@ -11,7 +11,8 @@ class ReconcileRepositories
     '.github/FUNDING.yml' => 'FUNDING.yml',
     '.github/workflows/issue-assessment.yml' => 'issue-assessment.yml',
     '.github/workflows/board.yml' => 'board.yml',
-    '.coderabbit.yaml' => 'coderabbit.yaml'
+    '.coderabbit.yaml' => 'coderabbit.yaml',
+    'renovate.json' => 'renovate.json'
   }.freeze
   # Copilot Triage's workflows, which private repositories do not get unless
   # they already have them: their Actions minutes are billed, and most private
@@ -44,6 +45,10 @@ class ReconcileRepositories
     '.coderabbit.yaml' => %w[
       570492062c0b9271b846305d8ae732040d76b1e9da048c12babde3162a1e2119
       6504e837bae83861119caa48378ff805567ebcb5df5255774194b507c11fc8ed
+    ],
+    # Renovate's own onboarding file, which only extends config:recommended.
+    'renovate.json' => %w[
+      173e3c711319403f415acba170bdbde545d67ee5c87b5dfa637d1ff8d4a4bd68
     ]
   }.freeze
   # Earlier account policy text, replaced when a policy still has it unedited.

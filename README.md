@@ -195,6 +195,16 @@ from anywhere but its registry and the maintainer's repositories. A
 configuration matching an earlier template in `PREVIOUS_TEMPLATE_DIGESTS` is
 upgraded; an edited one is reported and kept.
 
+Every repository's `renovate.json` extends `renovate/default.json` here, the
+account's Renovate policy: one pull request per repository each Monday morning
+(Berlin) with every minor and patch update, merged once CI passes and each
+release is three days old; security fixes at any time, also merged on green;
+majors one at a time, left for review; no Dependency Dashboard. Commit-pinned
+git dependencies (our patched forks) and egui are never moved, and the
+fastframe crates move together. Renovate's own onboarding `renovate.json` is
+upgraded to point here; a repository's own configuration is reported and kept,
+and should add the preset to its `extends`.
+
 The release-notes guidance (`templates/release-notes-guidance.md`) follows
 Spotifast's style: read the previous two stable releases (or the most recent
 prereleases when there are fewer), a short summary, media, `New` and `Fixed`
