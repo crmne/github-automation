@@ -201,7 +201,8 @@ account's Renovate policy: one pull request per repository each Monday morning
 release is three days old; security fixes at any time, also merged on green;
 majors one at a time, left for review; no Dependency Dashboard. Commit-pinned
 git dependencies (our patched forks), egui and winit are never moved, and the
-fastframe crates move together. Renovate's own onboarding `renovate.json` is
+fastframe crates move together. Go updates run `go mod tidy`, so `go.sum` drops
+old hashes and CI's tidy checks pass. Renovate's own onboarding `renovate.json` is
 upgraded to point here; a repository's own configuration is reported and kept,
 and should add the preset to its `extends`.
 
