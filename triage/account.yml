@@ -1,4 +1,4 @@
-# Account-wide Copilot Triage settings. Each repository's .github/triage.yml
+# Account-wide settings for the Maintainer triage bot. Each repository's .github/triage.yml
 # extends this file and keeps only what is its own: labels, sources, replies,
 # documentation links, and instructions. A key set there wins over this one.
 duplicates: close

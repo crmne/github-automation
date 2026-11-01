@@ -9,33 +9,19 @@ class ReconcileRepositories
     '.github/copilot-instructions.md' => 'copilot-instructions.md',
     '.github/triage.yml' => 'triage.yml',
     '.github/FUNDING.yml' => 'FUNDING.yml',
-    '.github/workflows/issue-assessment.yml' => 'issue-assessment.yml',
     '.github/workflows/board.yml' => 'board.yml',
     '.coderabbit.yaml' => 'coderabbit.yaml',
     'renovate.json' => 'renovate.json'
   }.freeze
-  # Copilot Triage's workflows, which private repositories do not get unless
-  # they already have them: their Actions minutes are billed, and most private
-  # repositories have no issues or pull requests to triage.
-  PUBLIC_ONLY_FILES = %w[.github/workflows/issue-assessment.yml .github/workflows/board.yml].freeze
-  # SHA-256 digests of every earlier version of each Copilot Triage workflow
-  # and of the CodeRabbit configuration, stripped and with LF line endings. A
+  # The board's sweep, which private repositories do not get unless they
+  # already have it: their Actions minutes are billed.
+  PUBLIC_ONLY_FILES = %w[.github/workflows/board.yml].freeze
+  # SHA-256 digests of every earlier version of the board workflow, the
+  # CodeRabbit configuration, and Renovate's file, stripped and with LF line endings. A
   # file matching one of these was never edited in its repository, so it is
   # upgraded to the current template. Add the outgoing digest whenever a
   # template changes.
   PREVIOUS_TEMPLATE_DIGESTS = {
-    '.github/workflows/issue-assessment.yml' => %w[
-      4dd98a77f8fd80de243fa8f0abfd5a763b5a2e18f90b86bac38c0c44eb7282ba
-      9e0602557064cb117fb1d084206c1d45de7db4f9ac6595b2d85461b772741b98
-      00f51f85d30d4b37ef47163e9bfe9cf9d2a1f8db7f3c5e9184b8e3fe23713bef
-      ce3f2d3a94edc81213f2da3ff8ecfb5701caac97fc3e80a4546f37e12ff5dc0c
-      87f060476c464e99373c96fd1355ca96a2951142036da88ef930951c5cad095c
-      d0ad910f49be75e69c433c16653378a13235ee12a20b4b26053681bbc6d7068f
-      57d77caa81c044b37d4bffa78011642c8407c435411403b174689bd835bb98e1
-      2d3771e54e82502ef19a130ae8bab05df5bbc1f01b4fef9830671feaa20b02ca
-      3795d977b5adbc6a654eb9af6fb45db868146e3e7deb1fd1f7cc6b2b609176f8
-      dba7b4bb6a414c5ca205d78254896efc5bfd76b2f496df813078b0dc3ee13437
-    ],
     '.github/workflows/board.yml' => %w[
       f22f01965279b998b8bff2e1561aafb10bb8a1cddd69fbbc066f06a624ecd303
       0b10d8b3ed1a13f7b62b4afe6368fad711c8561773a6187be4faa79d777587aa
@@ -49,6 +35,25 @@ class ReconcileRepositories
     # Renovate's own onboarding file, which only extends config:recommended.
     'renovate.json' => %w[
       173e3c711319403f415acba170bdbde545d67ee5c87b5dfa637d1ff8d4a4bd68
+    ]
+  }.freeze
+  # Copilot Triage's assessment workflow, every version the reconciler ever
+  # installed. The Maintainer triage bot on the Chat with Work GitHub App
+  # replaced it, so a copy matching one of these is removed; an edited one is
+  # reported and kept, since it may run something else too.
+  RETIRED_WORKFLOW_DIGESTS = {
+    '.github/workflows/issue-assessment.yml' => %w[
+      4dd98a77f8fd80de243fa8f0abfd5a763b5a2e18f90b86bac38c0c44eb7282ba
+      9e0602557064cb117fb1d084206c1d45de7db4f9ac6595b2d85461b772741b98
+      00f51f85d30d4b37ef47163e9bfe9cf9d2a1f8db7f3c5e9184b8e3fe23713bef
+      ce3f2d3a94edc81213f2da3ff8ecfb5701caac97fc3e80a4546f37e12ff5dc0c
+      87f060476c464e99373c96fd1355ca96a2951142036da88ef930951c5cad095c
+      d0ad910f49be75e69c433c16653378a13235ee12a20b4b26053681bbc6d7068f
+      57d77caa81c044b37d4bffa78011642c8407c435411403b174689bd835bb98e1
+      2d3771e54e82502ef19a130ae8bab05df5bbc1f01b4fef9830671feaa20b02ca
+      3795d977b5adbc6a654eb9af6fb45db868146e3e7deb1fd1f7cc6b2b609176f8
+      dba7b4bb6a414c5ca205d78254896efc5bfd76b2f496df813078b0dc3ee13437
+      f957134e9902351bc4161cacaa5d626773e32588b08c4b110dd70d074d21ab53
     ]
   }.freeze
   # Earlier account policy text, replaced when a policy still has it unedited.
@@ -68,6 +73,7 @@ class ReconcileRepositories
   # with its own token, from the organization's POLICY_TOKEN_ENV variable.
   ORGANIZATION_REPOSITORIES = %w[berlinrb/berlinrb.org].freeze
   POLICY_TOKEN_ENV = '%s_POLICY_TOKEN'
+  PULL_REQUEST_LIMIT = 25
   # The owner's Patreon handle, added to every owned FUNDING.yml that names no
   # Patreon page, beside its existing entries.
   PATREON = 'crmne'
@@ -123,13 +129,16 @@ class ReconcileRepositories
     end.to_h
   end
 
-  def initialize(api, owner:, templates:, dry_run: true, manage_files: true, organization_apis: {})
+  def initialize(api, owner:, templates:, dry_run: true, manage_files: true, organization_apis: {},
+                 pull_request_limit: PULL_REQUEST_LIMIT)
     @api = api
     @organization_apis = organization_apis
     @owner = owner
     @templates = templates
     @dry_run = dry_run
     @manage_files = manage_files
+    @pull_request_limit = pull_request_limit
+    @pull_requests = 0
   end
 
   def run
@@ -256,14 +265,16 @@ class ReconcileRepositories
       upgraded = files[path] && upgraded_template(path, files[path], label)
       [path, upgraded] if upgraded
     end
+    retired = RETIRED_WORKFLOW_DIGESTS.keys.select { |path| retired_workflow?(path, content(name, path, sha), label) }
     policy = files['.github/triage.yml'] && triage_policy(files['.github/triage.yml'], label)
     funding = !ORGANIZATION_REPOSITORIES.include?(name) && files['.github/FUNDING.yml'] &&
               funding_with_patreon(files['.github/FUNDING.yml'], label)
     dependabot = content(name, '.github/dependabot.yml', sha)
-    return 0 if missing.empty? && !agents && upgrades.empty? && !policy && !funding && !dependabot
+    return 0 if missing.empty? && !agents && upgrades.empty? && retired.empty? && !policy && !funding && !dependabot
 
     description = (missing.keys + sections.to_a.map { |title| "AGENTS.md #{title}" } +
       upgrades.map { |path, _| "upgrade #{File.basename(path)}" } +
+      retired.map { |path| "remove #{File.basename(path)}" } +
       (policy ? ['triage board and pull requests'] : []) +
       (funding ? ['Patreon in FUNDING.yml'] : []) +
       (dependabot ? ['remove .github/dependabot.yml'] : [])).join(', ')
@@ -272,13 +283,16 @@ class ReconcileRepositories
     branch = 'github-automation/account-policy'
     existing = @api.all("repos/#{name}/pulls?state=open&head=#{name.split('/').first}:#{branch}")
     return 0 unless existing.empty?
+    return skip_past_limit(label) if @pull_requests >= @pull_request_limit
 
+    @pull_requests += 1
     base_tree = @api.get("repos/#{name}/git/commits/#{sha}").dig('tree', 'sha')
     entries = missing.map { |path, template| blob_entry(name, path, File.read(File.join(@templates, template))) }
     entries << blob_entry(name, 'AGENTS.md', agents) if agents
     upgrades.each { |path, text| entries << blob_entry(name, path, text) }
     entries << blob_entry(name, '.github/triage.yml', policy) if policy
     entries << blob_entry(name, '.github/FUNDING.yml', funding) if funding
+    retired.each { |path| entries << { path: path, mode: '100644', type: 'blob', sha: nil } }
     entries << { path: '.github/dependabot.yml', mode: '100644', type: 'blob', sha: nil } if dependabot
     tree = @api.post("repos/#{name}/git/trees", { base_tree: base_tree, tree: entries })
     commit = @api.post("repos/#{name}/git/commits", {
@@ -292,6 +306,13 @@ class ReconcileRepositories
       body: "Align this repository with the account-wide maintainer, review, pull request, release-notes, triage, board, sponsorship, and dependency policy."
     })
     1
+  end
+
+  # Each pull request starts CI in its repository, so a change that reaches
+  # every repository goes out over several runs.
+  def skip_past_limit(label)
+    warn "Skipped #{label} policy pull request: limit of #{@pull_request_limit} a run reached"
+    0
   end
 
   def blob_entry(name, path, text)
@@ -364,6 +385,17 @@ class ReconcileRepositories
 
     warn "Skipped #{label} #{File.basename(path)}: edited locally"
     nil
+  end
+
+  # Whether the file is an unedited retired workflow, to remove. An
+  # edited one is reported and kept.
+  def retired_workflow?(path, file, label)
+    text = file_text(file)
+    return false if text.nil?
+    return true if RETIRED_WORKFLOW_DIGESTS.fetch(path).include?(Digest::SHA256.hexdigest(text.gsub("\r\n", "\n").strip))
+
+    warn "Skipped #{label} #{File.basename(path)}: edited locally"
+    false
   end
 
   # Returns the triage policy brought to the account's settings, or nil when
@@ -495,7 +527,8 @@ if $PROGRAM_NAME == __FILE__
       templates: File.expand_path('../templates', __dir__),
       dry_run: ENV.fetch('DRY_RUN', 'true') != 'false',
       manage_files: ENV.fetch('MANAGE_FILES', 'true') == 'true',
-      organization_apis: ReconcileRepositories.organization_apis(ENV)
+      organization_apis: ReconcileRepositories.organization_apis(ENV),
+      pull_request_limit: Integer(ENV.fetch('PULL_REQUEST_LIMIT', ReconcileRepositories::PULL_REQUEST_LIMIT))
     ).run
   rescue GitHub::Error, JSON::ParserError, KeyError, ArgumentError, IOError, SystemCallError, Timeout::Error => error
     warn "Stopped: #{error.class.name}: #{error.message}"
