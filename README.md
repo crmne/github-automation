@@ -116,15 +116,15 @@ commit. For repositories that are not forks, it:
 - enables vulnerability alerts but disables Dependabot security-update pull
   requests;
 - opens one pull request when `AGENTS.md`, Copilot instructions, triage policy,
-  the Copilot Triage workflows, or the funding configuration (GitHub Sponsors
-  and Patreon) is missing;
+  the board workflow, or the funding configuration (GitHub Sponsors and Patreon)
+  is missing;
 - adds the owner's Patreon page to an existing `.github/FUNDING.yml` that names
   none, keeping its other entries and comments, in that same pull request;
 - appends the release-notes guidance and the pull request rules to an existing
   `AGENTS.md` that lacks them, or updates unedited earlier copies, in that
   same pull request;
-- upgrades unedited earlier Copilot Triage workflows and CodeRabbit
-  configurations, and brings each triage policy to the account's settings, in
+- upgrades unedited earlier board workflows and CodeRabbit configurations,
+  removes unedited Copilot Triage assessment workflows, and brings each triage policy to the account's settings, in
   that same pull request; and
 - removes `.github/dependabot.yml` in that same pull request so version-update
   pull requests stay disabled.
@@ -137,43 +137,34 @@ project-specific instructions, such as Spotifast's, are more useful than a
 generic replacement. All files for a repository are added in
 one commit so the policy proposal triggers only one CI run per workflow.
 
-### Copilot Triage
+### Maintainer triage
 
-Every public repository gets two workflows from
-[Copilot Triage](https://github.com/crmne/copilot-triage). Private repositories
-do not, since their Actions minutes are billed and most have nothing to triage:
-add the workflows by hand to one that needs them, and the reconciler keeps them
-current from then on.
-`issue-assessment.yml` triages issues, discussions, and pull requests: it
-answers, labels, moves discussions that are really issues, requests a Copilot
-review when a change deserves one, and puts the item on the account's
-[Maintainer board](https://github.com/users/crmne/projects/1). `board.yml` runs
-the board's daily sweep without a model. Both run wherever they are installed,
-and skip a repository until its `.github/triage.yml` is on the default branch.
-They use these secrets:
+Issues, pull requests, and discussions are triaged by the Maintainer triage bot
+on the Chat with Work GitHub App, as `chat-with-work[bot]`: it answers, labels,
+closes what the policy lets it, requests reviews, and keeps its board on the
+bot's page. It lives in Chat with Work, not here, and uses no workflow, Actions
+minutes, or secret in these repositories. What this repository keeps is the
+policy it reads.
 
-- `COPILOT_GITHUB_TOKEN`: the owner's fine-grained token with Copilot Requests
-  and, to request reviews, Pull requests: Read and write.
-- `OPENROUTER_API_KEY`: an OpenRouter key for the fallback model, used only
-  once the Copilot allowance is spent; those runs triage like Copilot runs.
-- `TRIAGE_PROJECT_TOKEN`: a classic token with the `project` and `repo` scopes,
-  for the board. Without it, triage and the sweep skip the board quietly.
+It replaced Copilot Triage's assessment workflow. An `issue-assessment.yml`
+matching one of `RETIRED_WORKFLOW_DIGESTS` was never edited in its repository
+and is removed in the policy pull request; one edited by hand is reported and
+left alone, and still runs until someone removes it. While a repository's
+workflow is active, that repository stays excluded on the bot, so the two never
+answer the same item.
 
-An `issue-assessment.yml` or `board.yml` matching one of its
-`PREVIOUS_TEMPLATE_DIGESTS` was never edited in its repository and is replaced
-with the current template; one edited by hand is reported and left alone. The
-current triage workflow also runs when Copilot posts a review, and the board
-sweep sends forks' pull requests back to it. A manual run takes `quiet` to place
-the card on the board without posting, labeling, or closing anything, for
-re-assessing open reports. Add the outgoing digest whenever the
-template changes. Both workflows are short: they name the events and call
-Copilot Triage's shared workflows at `v0` with `secrets: inherit`, so
-permissions, queueing, inputs, and new secrets update with the tag and need no
-pull request here.
+`board.yml` stays: [Copilot Triage](https://github.com/crmne/copilot-triage)'s
+daily sweep runs the account's
+[Maintainer board](https://github.com/users/crmne/projects/1) without a model,
+and the bot can't write to that board yet. It uses `TRIAGE_PROJECT_TOKEN`, a
+classic token with the `project` and `repo` scopes. Public repositories get it;
+private ones keep it only if they already have it. A `board.yml` matching one
+of its `PREVIOUS_TEMPLATE_DIGESTS` is replaced with the current template; add
+the outgoing digest whenever the template changes.
 
 Account-wide triage settings live in [triage/account.yml](triage/account.yml):
 closing duplicates and finished issues, out-of-scope pull requests, Copilot
-reviews for private repositories only, and the board. Each repository's
+reviews for private repositories only, and the maintainer. Each repository's
 `.github/triage.yml` starts with `extends:` that file and keeps only what is its
 own: labels, sources, replies, documentation links, and instructions. When a
 policy still repeats account settings unchanged, they are dropped, so a change
@@ -188,7 +179,7 @@ repositories; existing ones find them in `AGENTS.md`.
 Repositories also get a `.coderabbit.yaml` when they have none: CodeRabbit's
 chill profile, with `request_changes_workflow` so a clean pull request gets an
 approval and one with findings gets "changes requested". Both are review
-events that run triage, so the board knows when CodeRabbit found nothing. Two
+events the bot hears, so its board knows when CodeRabbit found nothing. Two
 pre-merge checks in error mode enforce the pull request rules: one fails a pull
 request that commits review evidence, the other one that takes a dependency
 from anywhere but its registry and the maintainer's repositories. A
@@ -278,13 +269,16 @@ permissions as `REPOSITORY_POLICY_TOKEN`, stored as `<ORGANIZATION>_POLICY_TOKEN
 (such as `BERLINRB_POLICY_TOKEN`) and passed by both workflows. Without it, the
 organization's repositories are skipped. Such a token cannot manage the
 owner's watching, so watch those repositories by hand. CodeRabbit must be installed on the
-organization separately, and Copilot Triage needs its variable and secrets set
-in each repository, as for any other.
+organization separately.
+
+Each run opens at most 25 policy pull requests (`PULL_REQUEST_LIMIT`), so a
+change that reaches every repository goes out over several runs instead of
+starting CI everywhere at once; the rest are reported and picked up next time.
 
 Set the `REPOSITORY_POLICY_TOKEN` Actions secret to a fine-grained owner token
 with Administration, Contents, Pull requests, Workflows, and Metadata access for
 every managed repository. Workflows access is what allows the policy pull
-request to add or upgrade the Copilot Triage workflows. Run the workflow manually in dry-run mode first, then set the
+request to remove the assessment workflow and upgrade the board's. Run the workflow manually in dry-run mode first, then set the
 `REPOSITORY_POLICY_ENABLED` variable to `true`.
 
 Two settings cannot currently be fully enforced through the documented REST

@@ -176,7 +176,6 @@ class ReconcileRepositoriesTest < Minitest::Test
     '.github/copilot-instructions.md' => "copilot\n",
     '.github/triage.yml' => "triage\n",
     '.github/FUNDING.yml' => "github: crmne\npatreon: crmne\n",
-    '.github/workflows/issue-assessment.yml' => File.read(File.join(TEMPLATES, 'issue-assessment.yml')),
     '.github/workflows/board.yml' => File.read(File.join(TEMPLATES, 'board.yml')),
     '.coderabbit.yaml' => File.read(File.join(TEMPLATES, 'coderabbit.yaml')),
     'renovate.json' => File.read(File.join(TEMPLATES, 'renovate.json'))
@@ -396,10 +395,6 @@ class ReconcileRepositoriesTest < Minitest::Test
     reconcile_files({ 'AGENTS.md' => File.read(File.join(TEMPLATES, 'AGENTS.md')) }.merge(files))
   end
 
-  def workflow_template
-    File.read(File.join(TEMPLATES, 'issue-assessment.yml'))
-  end
-
   def previous_workflow(version)
     File.read(File.expand_path("fixtures/issue-assessment-#{version}.yml", __dir__))
   end
@@ -409,20 +404,23 @@ class ReconcileRepositoriesTest < Minitest::Test
   end
 
   def test_fixtures_cover_every_previous_template_digest
-    digests = %w[v1 v2 v3 v4 v5 v6 v7 v8 v9 v10].map { |version| Digest::SHA256.hexdigest(previous_workflow(version).strip) }
     boards = %w[v1 v2 v3 v4].map do |version|
       Digest::SHA256.hexdigest(File.read(File.expand_path("fixtures/board-#{version}.yml", __dir__)).strip)
     end
     coderabbits = %w[v1 v2].map { |version| Digest::SHA256.hexdigest(previous_coderabbit(version).strip) }
 
-    assert_equal ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('.github/workflows/issue-assessment.yml'), digests
     assert_equal boards, ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('.github/workflows/board.yml')
     assert_equal coderabbits, ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('.coderabbit.yaml')
     renovate = Digest::SHA256.hexdigest(File.read(File.expand_path('fixtures/renovate-v1.json', __dir__)).strip)
     assert_equal [renovate], ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('renovate.json')
     refute_includes boards, Digest::SHA256.hexdigest(File.read(File.join(TEMPLATES, 'board.yml')).strip)
-    refute_includes digests, Digest::SHA256.hexdigest(workflow_template.strip)
     refute_includes coderabbits, Digest::SHA256.hexdigest(File.read(File.join(TEMPLATES, 'coderabbit.yaml')).strip)
+  end
+
+  def test_fixtures_cover_every_retired_workflow_digest
+    workflows = (1..11).map { |version| Digest::SHA256.hexdigest(previous_workflow("v#{version}").strip) }
+
+    assert_equal workflows, ReconcileRepositories::RETIRED_WORKFLOW_DIGESTS.fetch('.github/workflows/issue-assessment.yml')
   end
 
   def test_upgrades_an_unedited_board_workflow
@@ -431,31 +429,39 @@ class ReconcileRepositoriesTest < Minitest::Test
 
       assert_equal [File.read(File.join(TEMPLATES, 'board.yml'))], api.blobs, version
     end
-    board = File.read(File.join(TEMPLATES, 'board.yml'))
-    assert_includes board, 'uses: crmne/copilot-triage/.github/workflows/sweep.yml@v0'
-    assert_includes board, 'triage_workflow: issue-assessment.yml'
-    assert_includes board, 'secrets: inherit'
   end
 
-  def test_upgrades_every_unedited_workflow_to_triage_pull_requests_and_the_board
-    %w[v1 v2 v3 v4 v5 v6 v7 v8 v9 v10].each do |version|
-      api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => previous_workflow(version) })
+  def test_removes_every_unedited_assessment_workflow
+    (1..11).each do |version|
+      api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => previous_workflow("v#{version}") })
 
-      assert_equal [workflow_template], api.blobs, version
-      assert_equal ['.github/workflows/issue-assessment.yml'], api.trees.first.fetch(:tree).map { |entry| entry[:path] }
+      assert_equal [{ path: '.github/workflows/issue-assessment.yml', mode: '100644', type: 'blob', sha: nil }],
+                   api.trees.first.fetch(:tree), version
     end
-    assert_includes workflow_template, 'pull_request_target:'
-    assert_includes workflow_template, 'pull_request_review:'
-    assert_includes workflow_template, 'types: [opened, reopened, closed]'
-    assert_includes workflow_template, 'synchronize, closed]'
-    assert_includes workflow_template, 'uses: crmne/copilot-triage/.github/workflows/assess.yml@v0'
-    assert_includes workflow_template, 'secrets: inherit'
   end
 
-  def test_upgrades_a_workflow_saved_without_a_final_newline
+  def test_removes_a_workflow_saved_without_a_final_newline
     api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => previous_workflow('v1').chomp })
 
-    assert_equal [workflow_template], api.blobs
+    assert_equal 1, api.trees.size
+  end
+
+  def test_private_repositories_lose_the_workflow_too
+    api = FilesAPI.new(COMPLETE.merge('AGENTS.md' => File.read(File.join(TEMPLATES, 'AGENTS.md')),
+                                      '.github/workflows/issue-assessment.yml' => previous_workflow('v11')))
+    reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: false)
+    capture_io { reconciler.send(:reconcile_files, REPO.merge('private' => true)) }
+
+    assert_equal ['.github/workflows/issue-assessment.yml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
+  end
+
+  def test_private_repositories_do_not_get_the_board_workflow
+    api = FilesAPI.new(COMPLETE.merge('AGENTS.md' => File.read(File.join(TEMPLATES, 'AGENTS.md')),
+                                      '.github/workflows/board.yml' => nil, '.coderabbit.yaml' => nil))
+    reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: false)
+    capture_io { reconciler.send(:reconcile_files, REPO.merge('private' => true)) }
+
+    assert_equal ['.coderabbit.yaml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
   end
 
   def test_reports_and_keeps_a_locally_edited_workflow
@@ -466,6 +472,22 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_empty api.writes
     assert_empty output
     assert_equal "Skipped crmne/project issue-assessment.yml: edited locally\n", error
+  end
+
+  def test_stops_opening_pull_requests_at_the_limit
+    api = FilesAPI.new(COMPLETE.merge('AGENTS.md' => File.read(File.join(TEMPLATES, 'AGENTS.md')), '.coderabbit.yaml' => nil))
+    reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: false, pull_request_limit: 1)
+    _output, error = capture_io { 2.times { reconciler.send(:reconcile_files, REPO) } }
+
+    assert_equal 1, api.trees.size
+    assert_includes error, 'limit of 1 a run reached'
+  end
+
+  def test_repositories_without_the_workflows_get_none
+    api, = reconcile_current({})
+
+    assert_empty api.trees
+    assert_equal 0, @changes
   end
 
   def account_policy
@@ -526,32 +548,14 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_includes error, 'not valid YAML'
   end
 
-  def test_new_repositories_get_the_workflows_and_a_policy_on_the_account_policy
-    api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => nil, '.github/workflows/board.yml' => nil,
-                             '.github/triage.yml' => nil })
+  def test_new_repositories_get_a_policy_on_the_account_policy
+    api, = reconcile_current({ '.github/triage.yml' => nil })
 
     paths = api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
-    assert_equal ['.github/triage.yml', '.github/workflows/issue-assessment.yml', '.github/workflows/board.yml'], paths
+    assert_equal ['.github/triage.yml'], paths
     policy = YAML.safe_load(File.read(File.join(TEMPLATES, 'triage.yml')))
     assert_equal 'crmne/github-automation:triage/account.yml', policy.fetch('extends')
     refute policy.key?('board')
-  end
-
-  def test_private_repositories_do_not_get_the_triage_workflows
-    api = FilesAPI.new(COMPLETE.merge('AGENTS.md' => File.read(File.join(TEMPLATES, 'AGENTS.md')),
-                                      '.github/workflows/issue-assessment.yml' => nil,
-                                      '.github/workflows/board.yml' => nil, '.coderabbit.yaml' => nil))
-    reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: false)
-    capture_io { reconciler.send(:reconcile_files, REPO.merge('private' => true)) }
-
-    assert_equal ['.coderabbit.yaml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
-  end
-
-  def test_public_repositories_get_the_triage_workflows
-    api, = reconcile_current({ '.github/workflows/issue-assessment.yml' => nil, '.github/workflows/board.yml' => nil })
-
-    assert_equal %w[.github/workflows/issue-assessment.yml .github/workflows/board.yml],
-                 api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
   end
 
   def test_adds_a_coderabbit_configuration_that_approves_clean_pull_requests
