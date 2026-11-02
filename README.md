@@ -185,7 +185,12 @@ release is three days old; security fixes at any time, also merged on green;
 majors one at a time, left for review; no Dependency Dashboard. Commit-pinned
 git dependencies (our patched forks), egui and winit are never moved, and the
 fastframe crates move together. Go updates run `go mod tidy`, so `go.sum` drops
-old hashes and CI's tidy checks pass. Renovate's own onboarding `renovate.json` is
+old hashes and CI's tidy checks pass. Ruby is its own group, opened at any time
+a day after a release, so `.ruby-version`, the Dockerfile, the Gemfile and mise
+move in one pull request. Two custom managers cover what Renovate's own can't
+write: a base image's version in an `ARG` with a suffix on the `FROM` line
+(`ARG RUBY_VERSION=4.0.9`, `FROM ruby:$RUBY_VERSION-slim`), and a `.ruby-version`
+in the `ruby-4.0.9` form. Renovate's own onboarding `renovate.json` is
 upgraded to point here; a repository's own configuration is reported and kept,
 and should add the preset to its `extends`.
 

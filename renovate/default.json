@@ -13,6 +13,31 @@
     "schedule": ["at any time"],
     "automerge": true
   },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Base images whose tag sits in an ARG with a suffix on the FROM line (ARG RUBY_VERSION=4.0.9, FROM ruby:$RUBY_VERSION-slim). The dockerfile manager reads these but can't write them: it looks for 4.0.9-slim, finds it on neither line, lists the update and changes nothing",
+      "managerFilePatterns": ["/(^|/)Dockerfile[^/]*$/"],
+      "matchStrings": [
+        "ARG RUBY_VERSION=\"?(?<currentValue>[^\\s\"]+)\"?\\n(?s:.*?)FROM (?:\\S+/)?(?<depName>ruby):\\$\\{?RUBY_VERSION\\}?",
+        "ARG NODE_VERSION=\"?(?<currentValue>[^\\s\"]+)\"?\\n(?s:.*?)FROM (?:\\S+/)?(?<depName>node):\\$\\{?NODE_VERSION\\}?",
+        "ARG PYTHON_VERSION=\"?(?<currentValue>[^\\s\"]+)\"?\\n(?s:.*?)FROM (?:\\S+/)?(?<depName>python):\\$\\{?PYTHON_VERSION\\}?",
+        "ARG GO_VERSION=\"?(?<currentValue>[^\\s\"]+)\"?\\n(?s:.*?)FROM (?:\\S+/)?(?<depName>golang):\\$\\{?GO_VERSION\\}?",
+        "ARG RUST_VERSION=\"?(?<currentValue>[^\\s\"]+)\"?\\n(?s:.*?)FROM (?:\\S+/)?(?<depName>rust):\\$\\{?RUST_VERSION\\}?"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": ".ruby-version files in Rails' ruby-4.0.9 form, which the ruby-version manager reads as an invalid version and skips",
+      "managerFilePatterns": ["/(^|/)\\.ruby-version$/"],
+      "matchStrings": ["^ruby-(?<currentValue>\\d+\\.\\d+\\.\\d+)\\s*$"],
+      "depNameTemplate": "ruby",
+      "datasourceTemplate": "ruby-version",
+      "versioningTemplate": "ruby"
+    }
+  ],
   "packageRules": [
     {
       "description": "Minor and patch updates: one weekly group, merged once CI passes and each release is three days old",
@@ -48,6 +73,14 @@
       "matchDepNames": ["fastframe", "fastframe-*"],
       "groupName": "fastframe",
       "groupSlug": "fastframe"
+    },
+    {
+      "description": "Ruby moves everywhere it's written in one pull request (.ruby-version, Dockerfile, Gemfile, mise), a day after a release rather than on the weekly run: its releases fix security problems, and the image only gets them if all of these move together",
+      "matchDepNames": ["ruby", "/(^|/)library/ruby$/"],
+      "groupName": "ruby",
+      "groupSlug": "ruby",
+      "schedule": ["at any time"],
+      "minimumReleaseAge": "1 day"
     }
   ]
 }
