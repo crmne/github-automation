@@ -16,14 +16,36 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Base images whose tag sits in an ARG with a suffix on the FROM line (ARG RUBY_VERSION=4.0.9, FROM ruby:$RUBY_VERSION-slim). The dockerfile manager reads these but can't write them: it looks for 4.0.9-slim, finds it on neither line, lists the update and changes nothing",
+      "description": "Base images whose tag sits in an ARG with a suffix on the FROM line (ARG RUBY_VERSION=4.0.9, FROM ruby:$RUBY_VERSION-slim). The dockerfile manager reads these but can't write them: it looks for 4.0.9-slim, finds it on neither line, lists the update and changes nothing. The first string proves a FROM on Docker Hub's official image uses the ARG; the second narrows the edit to the ARG line, so updates in one file can't overlap",
       "managerFilePatterns": ["/(^|/)Dockerfile[^/]*$/"],
+      "matchStringsStrategy": "recursive",
       "matchStrings": [
-        "ARG RUBY_VERSION=\"?(?<currentValue>[^\\s\"]+)\"?\\n(?s:.*?)FROM (?:\\S+/)?(?<depName>ruby):\\$\\{?RUBY_VERSION\\}?",
-        "ARG NODE_VERSION=\"?(?<currentValue>[^\\s\"]+)\"?\\n(?s:.*?)FROM (?:\\S+/)?(?<depName>node):\\$\\{?NODE_VERSION\\}?",
-        "ARG PYTHON_VERSION=\"?(?<currentValue>[^\\s\"]+)\"?\\n(?s:.*?)FROM (?:\\S+/)?(?<depName>python):\\$\\{?PYTHON_VERSION\\}?",
-        "ARG GO_VERSION=\"?(?<currentValue>[^\\s\"]+)\"?\\n(?s:.*?)FROM (?:\\S+/)?(?<depName>golang):\\$\\{?GO_VERSION\\}?",
-        "ARG RUST_VERSION=\"?(?<currentValue>[^\\s\"]+)\"?\\n(?s:.*?)FROM (?:\\S+/)?(?<depName>rust):\\$\\{?RUST_VERSION\\}?"
+        "ARG RUBY_VERSION=\\S+\\n(?s:.*?)FROM (?:--platform=\\S+ )?(?:(?:docker\\.io|index\\.docker\\.io|registry\\.docker\\.com)/(?:library/)?)?(?<depName>ruby):\\$\\{?RUBY_VERSION\\}?",
+        "ARG RUBY_VERSION=\"?(?<currentValue>[^\\s\"]+)\"?"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "The same for Node",
+      "managerFilePatterns": ["/(^|/)Dockerfile[^/]*$/"],
+      "matchStringsStrategy": "recursive",
+      "matchStrings": [
+        "ARG NODE_VERSION=\\S+\\n(?s:.*?)FROM (?:--platform=\\S+ )?(?:(?:docker\\.io|index\\.docker\\.io|registry\\.docker\\.com)/(?:library/)?)?(?<depName>node):\\$\\{?NODE_VERSION\\}?",
+        "ARG NODE_VERSION=\"?(?<currentValue>[^\\s\"]+)\"?"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "The same for Python",
+      "managerFilePatterns": ["/(^|/)Dockerfile[^/]*$/"],
+      "matchStringsStrategy": "recursive",
+      "matchStrings": [
+        "ARG PYTHON_VERSION=\\S+\\n(?s:.*?)FROM (?:--platform=\\S+ )?(?:(?:docker\\.io|index\\.docker\\.io|registry\\.docker\\.com)/(?:library/)?)?(?<depName>python):\\$\\{?PYTHON_VERSION\\}?",
+        "ARG PYTHON_VERSION=\"?(?<currentValue>[^\\s\"]+)\"?"
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
