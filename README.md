@@ -116,15 +116,14 @@ commit. For repositories that are not forks, it:
 - enables vulnerability alerts but disables Dependabot security-update pull
   requests;
 - opens one pull request when `AGENTS.md`, Copilot instructions, triage policy,
-  the board workflow, or the funding configuration (GitHub Sponsors and Patreon)
-  is missing;
+  or the funding configuration (GitHub Sponsors and Patreon) is missing;
 - adds the owner's Patreon page to an existing `.github/FUNDING.yml` that names
   none, keeping its other entries and comments, in that same pull request;
 - appends the release-notes guidance and the pull request rules to an existing
   `AGENTS.md` that lacks them, or updates unedited earlier copies, in that
   same pull request;
-- upgrades unedited earlier board workflows and CodeRabbit configurations,
-  removes unedited Copilot Triage assessment workflows, and brings each triage policy to the account's settings, in
+- upgrades unedited earlier CodeRabbit configurations, removes unedited Copilot
+  Triage workflows, and brings each triage policy to the account's settings, in
   that same pull request; and
 - removes `.github/dependabot.yml` in that same pull request so version-update
   pull requests stay disabled.
@@ -142,25 +141,18 @@ one commit so the policy proposal triggers only one CI run per workflow.
 Issues, pull requests, and discussions are triaged by the Maintainer triage bot
 on the Chat with Work GitHub App, as `chat-with-work[bot]`: it answers, labels,
 closes what the policy lets it, requests reviews, and keeps its board on the
-bot's page. It lives in Chat with Work, not here, and uses no workflow, Actions
-minutes, or secret in these repositories. What this repository keeps is the
-policy it reads.
+bot's page, mirrored to the account's
+[Maintainer board](https://github.com/users/crmne/projects/1). Its daily sweep
+keeps that board true without a model. It lives in Chat with Work, not here, and
+uses no workflow, Actions minutes, or secret in these repositories. What this
+repository keeps is the policy it reads.
 
-It replaced Copilot Triage's assessment workflow. An `issue-assessment.yml`
-matching one of `RETIRED_WORKFLOW_DIGESTS` was never edited in its repository
-and is removed in the policy pull request; one edited by hand is reported and
-left alone, and still runs until someone removes it. While a repository's
-workflow is active, that repository stays excluded on the bot, so the two never
-answer the same item.
-
-`board.yml` stays: [Copilot Triage](https://github.com/crmne/copilot-triage)'s
-daily sweep runs the account's
-[Maintainer board](https://github.com/users/crmne/projects/1) without a model,
-and the bot can't write to that board yet. It uses `TRIAGE_PROJECT_TOKEN`, a
-classic token with the `project` and `repo` scopes. Public repositories get it;
-private ones keep it only if they already have it. A `board.yml` matching one
-of its `PREVIOUS_TEMPLATE_DIGESTS` is replaced with the current template; add
-the outgoing digest whenever the template changes.
+It replaced Copilot Triage's two workflows, `issue-assessment.yml` and
+`board.yml`. A copy matching one of `RETIRED_WORKFLOW_DIGESTS` was never edited
+in its repository and is removed in the policy pull request; one edited by hand
+is reported and left alone, and still runs until someone removes it. While a
+repository's `issue-assessment.yml` is active, that repository stays excluded on
+the bot, so the two never answer the same item.
 
 Account-wide triage settings live in [triage/account.yml](triage/account.yml):
 closing duplicates and finished issues, out-of-scope pull requests, Copilot
@@ -278,7 +270,7 @@ starting CI everywhere at once; the rest are reported and picked up next time.
 Set the `REPOSITORY_POLICY_TOKEN` Actions secret to a fine-grained owner token
 with Administration, Contents, Pull requests, Workflows, and Metadata access for
 every managed repository. Workflows access is what allows the policy pull
-request to remove the assessment workflow and upgrade the board's. Run the workflow manually in dry-run mode first, then set the
+request to remove retired workflows. Run the workflow manually in dry-run mode first, then set the
 `REPOSITORY_POLICY_ENABLED` variable to `true`.
 
 Two settings cannot currently be fully enforced through the documented REST
