@@ -9,25 +9,14 @@ class ReconcileRepositories
     '.github/copilot-instructions.md' => 'copilot-instructions.md',
     '.github/triage.yml' => 'triage.yml',
     '.github/FUNDING.yml' => 'FUNDING.yml',
-    '.github/workflows/board.yml' => 'board.yml',
     '.coderabbit.yaml' => 'coderabbit.yaml',
     'renovate.json' => 'renovate.json'
   }.freeze
-  # The board's sweep, which private repositories do not get unless they
-  # already have it: their Actions minutes are billed.
-  PUBLIC_ONLY_FILES = %w[.github/workflows/board.yml].freeze
-  # SHA-256 digests of every earlier version of the board workflow, the
-  # CodeRabbit configuration, and Renovate's file, stripped and with LF line endings. A
-  # file matching one of these was never edited in its repository, so it is
-  # upgraded to the current template. Add the outgoing digest whenever a
-  # template changes.
+  # SHA-256 digests of every earlier version of the CodeRabbit configuration
+  # and Renovate's file, stripped and with LF line endings. A file matching one
+  # of these was never edited in its repository, so it is upgraded to the
+  # current template. Add the outgoing digest whenever a template changes.
   PREVIOUS_TEMPLATE_DIGESTS = {
-    '.github/workflows/board.yml' => %w[
-      f22f01965279b998b8bff2e1561aafb10bb8a1cddd69fbbc066f06a624ecd303
-      0b10d8b3ed1a13f7b62b4afe6368fad711c8561773a6187be4faa79d777587aa
-      04aaf6ab4e3ed1585b5e3e48eb1471fcbe563706d570719d45539a60f3061dae
-      bb5e5c28d6432d11fec27646154deefd257cbfd2cef2e3d71f2df1c31555a38e
-    ],
     '.coderabbit.yaml' => %w[
       570492062c0b9271b846305d8ae732040d76b1e9da048c12babde3162a1e2119
       6504e837bae83861119caa48378ff805567ebcb5df5255774194b507c11fc8ed
@@ -37,10 +26,10 @@ class ReconcileRepositories
       173e3c711319403f415acba170bdbde545d67ee5c87b5dfa637d1ff8d4a4bd68
     ]
   }.freeze
-  # Copilot Triage's assessment workflow, every version the reconciler ever
-  # installed. The Maintainer triage bot on the Chat with Work GitHub App
-  # replaced it, so a copy matching one of these is removed; an edited one is
-  # reported and kept, since it may run something else too.
+  # Copilot Triage's workflows, every version the reconciler ever installed.
+  # The Maintainer triage bot on the Chat with Work GitHub App replaced them,
+  # so a copy matching one of these is removed; an edited one is reported and
+  # kept, since it may run something else too.
   RETIRED_WORKFLOW_DIGESTS = {
     '.github/workflows/issue-assessment.yml' => %w[
       4dd98a77f8fd80de243fa8f0abfd5a763b5a2e18f90b86bac38c0c44eb7282ba
@@ -54,6 +43,13 @@ class ReconcileRepositories
       3795d977b5adbc6a654eb9af6fb45db868146e3e7deb1fd1f7cc6b2b609176f8
       dba7b4bb6a414c5ca205d78254896efc5bfd76b2f496df813078b0dc3ee13437
       f957134e9902351bc4161cacaa5d626773e32588b08c4b110dd70d074d21ab53
+    ],
+    '.github/workflows/board.yml' => %w[
+      f22f01965279b998b8bff2e1561aafb10bb8a1cddd69fbbc066f06a624ecd303
+      0b10d8b3ed1a13f7b62b4afe6368fad711c8561773a6187be4faa79d777587aa
+      04aaf6ab4e3ed1585b5e3e48eb1471fcbe563706d570719d45539a60f3061dae
+      bb5e5c28d6432d11fec27646154deefd257cbfd2cef2e3d71f2df1c31555a38e
+      f4d5fe0e33e3918cea3d99b71e385eed008c13ac73c8e5082902c72e01b6bf36
     ]
   }.freeze
   # Earlier account policy text, replaced when a policy still has it unedited.
@@ -259,7 +255,6 @@ class ReconcileRepositories
     files = MANAGED_FILES.keys.to_h { |path| [path, content(name, path, sha)] }
     missing = MANAGED_FILES.select { |path, _| files[path].nil? }
     missing.delete('.github/FUNDING.yml') if ORGANIZATION_REPOSITORIES.include?(name)
-    PUBLIC_ONLY_FILES.each { |path| missing.delete(path) } if repo['private']
     agents, sections = files['AGENTS.md'] && agents_with_sections(files['AGENTS.md'], label)
     upgrades = PREVIOUS_TEMPLATE_DIGESTS.keys.filter_map do |path|
       upgraded = files[path] && upgraded_template(path, files[path], label)
@@ -303,7 +298,7 @@ class ReconcileRepositories
       title: 'Apply account repository policy',
       head: branch,
       base: default_branch,
-      body: "Align this repository with the account-wide maintainer, review, pull request, release-notes, triage, board, sponsorship, and dependency policy."
+      body: "Align this repository with the account-wide maintainer, review, pull request, release-notes, triage, sponsorship, and dependency policy."
     })
     1
   end

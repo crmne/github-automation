@@ -176,7 +176,6 @@ class ReconcileRepositoriesTest < Minitest::Test
     '.github/copilot-instructions.md' => "copilot\n",
     '.github/triage.yml' => "triage\n",
     '.github/FUNDING.yml' => "github: crmne\npatreon: crmne\n",
-    '.github/workflows/board.yml' => File.read(File.join(TEMPLATES, 'board.yml')),
     '.coderabbit.yaml' => File.read(File.join(TEMPLATES, 'coderabbit.yaml')),
     'renovate.json' => File.read(File.join(TEMPLATES, 'renovate.json'))
   }.freeze
@@ -399,21 +398,20 @@ class ReconcileRepositoriesTest < Minitest::Test
     File.read(File.expand_path("fixtures/issue-assessment-#{version}.yml", __dir__))
   end
 
+  def previous_board(version)
+    File.read(File.expand_path("fixtures/board-v#{version}.yml", __dir__))
+  end
+
   def previous_coderabbit(version)
     File.read(File.expand_path("fixtures/coderabbit-#{version}.yaml", __dir__))
   end
 
   def test_fixtures_cover_every_previous_template_digest
-    boards = %w[v1 v2 v3 v4].map do |version|
-      Digest::SHA256.hexdigest(File.read(File.expand_path("fixtures/board-#{version}.yml", __dir__)).strip)
-    end
     coderabbits = %w[v1 v2].map { |version| Digest::SHA256.hexdigest(previous_coderabbit(version).strip) }
 
-    assert_equal boards, ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('.github/workflows/board.yml')
     assert_equal coderabbits, ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('.coderabbit.yaml')
     renovate = Digest::SHA256.hexdigest(File.read(File.expand_path('fixtures/renovate-v1.json', __dir__)).strip)
     assert_equal [renovate], ReconcileRepositories::PREVIOUS_TEMPLATE_DIGESTS.fetch('renovate.json')
-    refute_includes boards, Digest::SHA256.hexdigest(File.read(File.join(TEMPLATES, 'board.yml')).strip)
     refute_includes coderabbits, Digest::SHA256.hexdigest(File.read(File.join(TEMPLATES, 'coderabbit.yaml')).strip)
   end
 
@@ -421,14 +419,47 @@ class ReconcileRepositoriesTest < Minitest::Test
     workflows = (1..11).map { |version| Digest::SHA256.hexdigest(previous_workflow("v#{version}").strip) }
 
     assert_equal workflows, ReconcileRepositories::RETIRED_WORKFLOW_DIGESTS.fetch('.github/workflows/issue-assessment.yml')
+    boards = (1..5).map { |version| Digest::SHA256.hexdigest(previous_board(version).strip) }
+    assert_equal boards, ReconcileRepositories::RETIRED_WORKFLOW_DIGESTS.fetch('.github/workflows/board.yml')
   end
 
-  def test_upgrades_an_unedited_board_workflow
-    %w[v1 v2 v3].each do |version|
-      api, = reconcile_current({ '.github/workflows/board.yml' => File.read(File.expand_path("fixtures/board-#{version}.yml", __dir__)) })
+  def test_removes_every_unedited_board_workflow
+    (1..5).each do |version|
+      api, = reconcile_current({ '.github/workflows/board.yml' => previous_board(version) })
 
-      assert_equal [File.read(File.join(TEMPLATES, 'board.yml'))], api.blobs, version
+      assert_equal [{ path: '.github/workflows/board.yml', mode: '100644', type: 'blob', sha: nil }],
+                   api.trees.first.fetch(:tree), version
+      assert_empty api.blobs, version
     end
+  end
+
+  def test_removes_a_board_workflow_saved_with_windows_line_endings
+    api, = reconcile_current({ '.github/workflows/board.yml' => previous_board(5).gsub("\n", "\r\n") })
+
+    assert_equal ['.github/workflows/board.yml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
+  end
+
+  def test_reports_and_keeps_a_locally_edited_board_workflow
+    api, output, error = reconcile_current({ '.github/workflows/board.yml' => "#{previous_board(5)}# Ours\n" })
+
+    assert_equal 0, @changes
+    assert_empty api.writes
+    assert_empty output
+    assert_equal "Skipped crmne/project board.yml: edited locally\n", error
+  end
+
+  def test_removes_both_retired_workflows_in_one_pull_request
+    api, = reconcile_current({ '.github/workflows/board.yml' => previous_board(5),
+                               '.github/workflows/issue-assessment.yml' => previous_workflow('v11') })
+
+    assert_equal 1, api.trees.size
+    assert_equal %w[.github/workflows/issue-assessment.yml .github/workflows/board.yml],
+                 api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
+  end
+
+  def test_nothing_distributes_the_board_workflow
+    refute_path_exists File.join(TEMPLATES, 'board.yml')
+    refute ReconcileRepositories::MANAGED_FILES.key?('.github/workflows/board.yml')
   end
 
   def test_removes_every_unedited_assessment_workflow
@@ -455,13 +486,13 @@ class ReconcileRepositoriesTest < Minitest::Test
     assert_equal ['.github/workflows/issue-assessment.yml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
   end
 
-  def test_private_repositories_do_not_get_the_board_workflow
+  def test_private_repositories_lose_the_board_workflow_too
     api = FilesAPI.new(COMPLETE.merge('AGENTS.md' => File.read(File.join(TEMPLATES, 'AGENTS.md')),
-                                      '.github/workflows/board.yml' => nil, '.coderabbit.yaml' => nil))
+                                      '.github/workflows/board.yml' => previous_board(5)))
     reconciler = ReconcileRepositories.new(api, owner: 'crmne', templates: TEMPLATES, dry_run: false)
     capture_io { reconciler.send(:reconcile_files, REPO.merge('private' => true)) }
 
-    assert_equal ['.coderabbit.yaml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
+    assert_equal ['.github/workflows/board.yml'], api.trees.first.fetch(:tree).map { |entry| entry.fetch(:path) }
   end
 
   def test_reports_and_keeps_a_locally_edited_workflow
