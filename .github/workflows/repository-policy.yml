@@ -32,7 +32,7 @@ jobs:
           persist-credentials: false
       - uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.3'
+          ruby-version: '3.4'
       - run: ruby bin/reconcile_repositories.rb
         env:
           GITHUB_POLICY_TOKEN: ${{ secrets.REPOSITORY_POLICY_TOKEN }}
